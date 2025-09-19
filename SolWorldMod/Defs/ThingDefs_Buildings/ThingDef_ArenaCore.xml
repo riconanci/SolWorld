@@ -2,23 +2,57 @@
 <Defs>
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_ArenaCore</defName>
-    <label>Arena Core</label>
-    <description>Arena control system</description>
+    <label>SolWorld Arena Core</label>
+    <description>The central control system for automated SolWorld arena battles. Manages 10v10 rounds with 5-minute cadence. Requires two team spawners to function. No power required - operates independently.</description>
     <thingClass>SolWorldMod.Thing_ArenaCore</thingClass>
     <category>Building</category>
     <graphicData>
-      <texPath>UI/Buttons/MainButtons/Research</texPath>
-      <graphicClass>Graphic_Single</graphicClass>
+      <texPath>Things/Building/Misc/MultiAnalyzer</texPath>
+      <graphicClass>Graphic_Multi</graphicClass>
       <drawSize>(2,2)</drawSize>
+      <damageData>
+        <cornerTL>Damage/Corner</cornerTL>
+        <cornerTR>Damage/Corner</cornerTR>
+        <cornerBL>Damage/Corner</cornerBL>
+        <cornerBR>Damage/Corner</cornerBR>
+      </damageData>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
     <passability>PassThroughOnly</passability>
-    <fillPercent>0.4</fillPercent>
+    <pathCost>70</pathCost>
+    <blockWind>true</blockWind>
+    <fillPercent>0.5</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>500</MaxHitPoints>
+      <MaxHitPoints>400</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
+      <Flammability>0.5</Flammability>
+      <Beauty>-5</Beauty>
     </statBases>
-    <designationCategory>SolWorld_Arena</designationCategory>
     <size>(2,2)</size>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <costList>
+      <!-- Free to build for testing -->
+    </costList>
+    <comps>
+      <!-- Removed power components -->
+      <li Class="CompProperties_Flickable"/>
+      <li Class="CompProperties_Breakdownable"/>
+      <li Class="CompProperties_Forbiddable"/>
+      <li Class="CompProperties_Glower">
+        <glowRadius>6</glowRadius>
+        <glowColor>(152,255,191,0)</glowColor>
+      </li>
+    </comps>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+      <allowAutoroof>false</allowAutoroof>
+    </building>
+    <placeWorkers>
+      <li>PlaceWorker_NotUnderRoof</li>
+      <li>SolWorldMod.PlaceWorker_ArenaCore</li>
+    </placeWorkers>
+    <!-- Remove research requirements for testing -->
   </ThingDef>
 </Defs>

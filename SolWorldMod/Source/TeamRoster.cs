@@ -3,25 +3,75 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Verse;
+using RimWorld;
 
 namespace SolWorldMod
 {
-    public class Fighter
+    public class Fighter : IExposable
     {
-        public string WalletFull { get; set; }     // Full wallet address
-        public string WalletShort { get; set; }    // Display name (xxxxx....xxxxx)
-        public TeamColor Team { get; set; }
-        public Pawn PawnRef { get; set; }          // Reference to spawned pawn
-        public int Kills { get; set; }
-        public bool Alive { get; set; } = true;
+        // Use fields instead of auto-properties to avoid ref/out issues
+        private string walletFull;
+        private string walletShort;
+        private TeamColor team;
+        private Pawn pawnRef;
+        private int kills;
+        private bool alive = true;
         
-        public Fighter(string walletFull, TeamColor team)
+        public string WalletFull 
+        { 
+            get { return walletFull; } 
+            set { walletFull = value; } 
+        }
+        
+        public string WalletShort 
+        { 
+            get { return walletShort; } 
+            set { walletShort = value; } 
+        }
+        
+        public TeamColor Team 
+        { 
+            get { return team; } 
+            set { team = value; } 
+        }
+        
+        public Pawn PawnRef 
+        { 
+            get { return pawnRef; } 
+            set { pawnRef = value; } 
+        }
+        
+        public int Kills 
+        { 
+            get { return kills; } 
+            set { kills = value; } 
+        }
+        
+        public bool Alive 
+        { 
+            get { return alive; } 
+            set { alive = value; } 
+        }
+        
+        public Fighter()
         {
-            WalletFull = walletFull;
-            WalletShort = ShortenAddress(walletFull);
-            Team = team;
-            Kills = 0;
-            Alive = true;
+            // Parameterless constructor for serialization
+            walletFull = "";
+            walletShort = "";
+            team = TeamColor.Red;
+            pawnRef = null;
+            kills = 0;
+            alive = true;
+        }
+        
+        public Fighter(string walletFullAddress, TeamColor fighterTeam)
+        {
+            walletFull = walletFullAddress;
+            walletShort = ShortenAddress(walletFullAddress);
+            team = fighterTeam;
+            pawnRef = null;
+            kills = 0;
+            alive = true;
         }
         
         private static string ShortenAddress(string address)
@@ -32,38 +82,122 @@ namespace SolWorldMod
             // Use traditional substring - no modern range operators
             return address.Substring(0, 5) + "...." + address.Substring(address.Length - 5);
         }
+        
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref walletFull, "walletFull", "");
+            Scribe_Values.Look(ref walletShort, "walletShort", "");
+            Scribe_Values.Look(ref team, "team", TeamColor.Red);
+            Scribe_References.Look(ref pawnRef, "pawnRef");
+            Scribe_Values.Look(ref kills, "kills", 0);
+            Scribe_Values.Look(ref alive, "alive", true);
+        }
     }
 
-    public class RoundRoster
+    public class RoundRoster : IExposable
     {
-        public string MatchId { get; set; }
-        public List<Fighter> Red { get; set; } = new List<Fighter>();
-        public List<Fighter> Blue { get; set; } = new List<Fighter>();
+        // Use fields instead of auto-properties
+        private string matchId;
+        private List<Fighter> red;
+        private List<Fighter> blue;
+        private int previewTicks;
+        private int combatTicks;
+        private float roundRewardTotalSol = 1.0f;
+        private float payoutPercent = 0.20f;
+        private bool isLive = false;
+        private TeamColor? winner = null;
         
-        // Round timing
-        public int PreviewTicks { get; set; }
-        public int CombatTicks { get; set; }
+        public string MatchId 
+        { 
+            get { return matchId; } 
+            set { matchId = value; } 
+        }
+        
+        public List<Fighter> Red 
+        { 
+            get { return red; } 
+            set { red = value; } 
+        }
+        
+        public List<Fighter> Blue 
+        { 
+            get { return blue; } 
+            set { blue = value; } 
+        }
+        
+        public int PreviewTicks 
+        { 
+            get { return previewTicks; } 
+            set { previewTicks = value; } 
+        }
+        
+        public int CombatTicks 
+        { 
+            get { return combatTicks; } 
+            set { combatTicks = value; } 
+        }
+        
+        public float RoundRewardTotalSol 
+        { 
+            get { return roundRewardTotalSol; } 
+            set { roundRewardTotalSol = value; } 
+        }
+        
+        public float PayoutPercent 
+        { 
+            get { return payoutPercent; } 
+            set { payoutPercent = value; } 
+        }
+        
+        public bool IsLive 
+        { 
+            get { return isLive; } 
+            set { isLive = value; } 
+        }
+        
+        public TeamColor? Winner 
+        { 
+            get { return winner; } 
+            set { winner = value; } 
+        }
         
         // Live counters - use LINQ (available in RimWorld 1.6)
-        public int RedAlive => Red.Count(f => f.Alive);
-        public int BlueAlive => Blue.Count(f => f.Alive);
-        public int RedKills => Red.Sum(f => f.Kills);
-        public int BlueKills => Blue.Sum(f => f.Kills);
+        public int RedAlive 
+        { 
+            get { return red?.Count(f => f.Alive) ?? 0; } 
+        }
         
-        // Round reward info
-        public float RoundRewardTotalSol { get; set; } = 1.0f;
-        public float PayoutPercent { get; set; } = 0.20f;
-        public float PerWinnerPayout => RoundRewardTotalSol * PayoutPercent / 10.0f;
+        public int BlueAlive 
+        { 
+            get { return blue?.Count(f => f.Alive) ?? 0; } 
+        }
         
-        // State
-        public bool IsLive { get; set; } = false;
-        public TeamColor? Winner { get; set; } = null;
+        public int RedKills 
+        { 
+            get { return red?.Sum(f => f.Kills) ?? 0; } 
+        }
+        
+        public int BlueKills 
+        { 
+            get { return blue?.Sum(f => f.Kills) ?? 0; } 
+        }
+        
+        public float PerWinnerPayout 
+        { 
+            get { return roundRewardTotalSol * payoutPercent / 10.0f; } 
+        }
         
         public RoundRoster()
         {
-            MatchId = GenerateMatchId();
-            PreviewTicks = SolWorldSettings.PREVIEW_SECONDS * 60;
-            CombatTicks = SolWorldSettings.COMBAT_SECONDS * 60;
+            matchId = GenerateMatchId();
+            red = new List<Fighter>();
+            blue = new List<Fighter>();
+            previewTicks = SolWorldSettings.PREVIEW_SECONDS * 60;
+            combatTicks = SolWorldSettings.COMBAT_SECONDS * 60;
+            roundRewardTotalSol = 1.0f;
+            payoutPercent = 0.20f;
+            isLive = false;
+            winner = null;
         }
         
         private string GenerateMatchId()
@@ -86,13 +220,31 @@ namespace SolWorldMod
         
         public List<Fighter> GetWinningTeam()
         {
-            var winner = Winner ?? DetermineWinner();
-            return winner == TeamColor.Red ? Red : Blue;
+            var winnerTeam = winner ?? DetermineWinner();
+            return winnerTeam == TeamColor.Red ? red : blue;
         }
         
-        public List<Fighter> GetTeam(TeamColor team)
+        public List<Fighter> GetTeam(TeamColor teamColor)
         {
-            return team == TeamColor.Red ? Red : Blue;
+            return teamColor == TeamColor.Red ? red : blue;
+        }
+        
+        public void ExposeData()
+        {
+            Scribe_Values.Look(ref matchId, "matchId", "");
+            Scribe_Collections.Look(ref red, "red", LookMode.Deep);
+            Scribe_Collections.Look(ref blue, "blue", LookMode.Deep);
+            Scribe_Values.Look(ref previewTicks, "previewTicks", SolWorldSettings.PREVIEW_SECONDS * 60);
+            Scribe_Values.Look(ref combatTicks, "combatTicks", SolWorldSettings.COMBAT_SECONDS * 60);
+            Scribe_Values.Look(ref roundRewardTotalSol, "roundRewardTotalSol", 1.0f);
+            Scribe_Values.Look(ref payoutPercent, "payoutPercent", 0.20f);
+            Scribe_Values.Look(ref isLive, "isLive", false);
+            Scribe_Values.Look(ref winner, "winner");
+            
+            // Initialize lists if null after loading
+            if (red == null) red = new List<Fighter>();
+            if (blue == null) blue = new List<Fighter>();
+            if (string.IsNullOrEmpty(matchId)) matchId = GenerateMatchId();
         }
     }
 }

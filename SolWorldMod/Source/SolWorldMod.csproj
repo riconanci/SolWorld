@@ -13,6 +13,14 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
   </PropertyGroup>
 
+  <!-- Default RimWorld directory for common Steam locations -->
+  <PropertyGroup Condition="'$(RimWorldDir)' == ''">
+    <RimWorldDir Condition="Exists('C:\Program Files (x86)\Steam\steamapps\common\RimWorld')">C:\Program Files (x86)\Steam\steamapps\common\RimWorld</RimWorldDir>
+    <RimWorldDir Condition="Exists('D:\Steam\steamapps\common\RimWorld')">D:\Steam\steamapps\common\RimWorld</RimWorldDir>
+    <RimWorldDir Condition="Exists('E:\Steam\steamapps\common\RimWorld')">E:\Steam\steamapps\common\RimWorld</RimWorldDir>
+    <RimWorldDir Condition="Exists('C:\Steam\steamapps\common\RimWorld')">C:\Steam\steamapps\common\RimWorld</RimWorldDir>
+  </PropertyGroup>
+
   <!-- Debug: Print RimWorld directory being used -->
   <Target Name="ShowRimWorldDir" BeforeTargets="Build">
     <Message Text="Using RimWorldDir: $(RimWorldDir)" Importance="high" />
@@ -20,13 +28,13 @@
   </Target>
 
   <ItemGroup>
-    <!-- Core RimWorld assemblies -->
+    <!-- Core RimWorld assemblies for version 1.6 -->
     <Reference Include="Assembly-CSharp">
       <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     
-    <!-- RimWorld 1.6 Harmony -->
+    <!-- RimWorld 1.6 Harmony - try different possible locations -->
     <Reference Include="0Harmony" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll')">
       <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll</HintPath>
       <Private>false</Private>
@@ -36,7 +44,7 @@
       <Private>false</Private>
     </Reference>
     
-    <!-- Unity DLLs -->
+    <!-- Unity DLLs for RimWorld 1.6 -->
     <Reference Include="UnityEngine" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.dll')">
       <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.dll</HintPath>
       <Private>false</Private>
@@ -49,11 +57,27 @@
       <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.TextRenderingModule.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
 
-  <!-- Fallback: Use NuGet Harmony if not found -->
+  <!-- Fallback: Use NuGet Harmony if not found in RimWorld installation -->
   <ItemGroup Condition="!Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll') And !Exists('../Assemblies/0Harmony.dll')">
     <PackageReference Include="Harmony" Version="2.3.3" />
   </ItemGroup>
+
+  <!-- Copy local files post-build for easier development -->
+  <Target Name="CopyToRimWorldMods" AfterTargets="Build" Condition="'$(Configuration)' == 'Debug' And '$(RimWorldDir)' != ''">
+    <Message Text="Copying mod to RimWorld Mods directory for testing..." Importance="high" />
+    <ItemGroup>
+      <ModFiles Include="../**/*" Exclude="../Source/**/*;../.git/**/*;../bin/**/*;../obj/**/*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ModFiles)" 
+          DestinationFiles="@(ModFiles -> '$(RimWorldDir)\Mods\SolWorldMod\%(RecursiveDir)%(Filename)%(Extension)')" 
+          SkipUnchangedFiles="true"
+          ContinueOnError="true" />
+  </Target>
 
 </Project>

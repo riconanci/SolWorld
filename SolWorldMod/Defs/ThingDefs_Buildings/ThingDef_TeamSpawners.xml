@@ -3,46 +3,94 @@
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_RedSpawn</defName>
     <label>Red Team Spawner</label>
-    <description>Red team spawn point</description>
+    <description>Spawn point for the red team in SolWorld arena battles. Place this to mark where red team fighters will appear during rounds.</description>
     <thingClass>Building</thingClass>
     <category>Building</category>
     <graphicData>
-      <texPath>UI/Buttons/MainButtons/Research</texPath>
+      <texPath>Things/Building/Misc/TempControl/Heater</texPath>
       <graphicClass>Graphic_Single</graphicClass>
       <drawSize>(1,1)</drawSize>
-      <color>(1,0.5,0.5)</color>
+      <color>(1.0,0.2,0.2)</color>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
     <passability>PassThroughOnly</passability>
-    <fillPercent>0.2</fillPercent>
+    <pathCost>0</pathCost>
+    <fillPercent>0.3</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>200</MaxHitPoints>
+      <MaxHitPoints>150</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
+      <Flammability>0.5</Flammability>
+      <Beauty>-2</Beauty>
     </statBases>
-    <designationCategory>SolWorld_Arena</designationCategory>
     <size>(1,1)</size>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <costList>
+      <!-- Free to build for testing -->
+    </costList>
+    <comps>
+      <li Class="CompProperties_Forbiddable"/>
+      <li Class="CompProperties_Glower">
+        <glowRadius>3</glowRadius>
+        <glowColor>(217,112,33,0)</glowColor>
+      </li>
+    </comps>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+      <allowAutoroof>false</allowAutoroof>
+    </building>
+    <placeWorkers>
+      <li>PlaceWorker_NotUnderRoof</li>
+      <li>SolWorldMod.PlaceWorker_RedSpawner</li>
+    </placeWorkers>
+    <!-- Remove research requirements for testing -->
   </ThingDef>
   
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_BlueSpawn</defName>
     <label>Blue Team Spawner</label>
-    <description>Blue team spawn point</description>
+    <description>Spawn point for the blue team in SolWorld arena battles. Place this to mark where blue team fighters will appear during rounds.</description>
     <thingClass>Building</thingClass>
     <category>Building</category>
     <graphicData>
-      <texPath>UI/Buttons/MainButtons/Research</texPath>
+      <texPath>Things/Building/Misc/TempControl/Heater</texPath>
       <graphicClass>Graphic_Single</graphicClass>
       <drawSize>(1,1)</drawSize>
-      <color>(0.5,0.5,1)</color>
+      <color>(0.2,0.2,1.0)</color>
     </graphicData>
     <altitudeLayer>Building</altitudeLayer>
     <passability>PassThroughOnly</passability>
-    <fillPercent>0.2</fillPercent>
+    <pathCost>0</pathCost>
+    <fillPercent>0.3</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>200</MaxHitPoints>
+      <MaxHitPoints>150</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
+      <Flammability>0.5</Flammability>
+      <Beauty>-2</Beauty>
     </statBases>
-    <designationCategory>SolWorld_Arena</designationCategory>
     <size>(1,1)</size>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <costList>
+      <!-- Free to build for testing -->
+    </costList>
+    <comps>
+      <li Class="CompProperties_Forbiddable"/>
+      <li Class="CompProperties_Glower">
+        <glowRadius>3</glowRadius>
+        <glowColor>(33,112,217,0)</glowColor>
+      </li>
+    </comps>
+    <building>
+      <ai_chillDestination>false</ai_chillDestination>
+      <allowAutoroof>false</allowAutoroof>
+    </building>
+    <placeWorkers>
+      <li>PlaceWorker_NotUnderRoof</li>
+      <li>SolWorldMod.PlaceWorker_BlueSpawner</li>
+    </placeWorkers>
+    <!-- Remove research requirements for testing -->
   </ThingDef>
 </Defs>

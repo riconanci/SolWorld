@@ -71,8 +71,7 @@ namespace SolWorldMod
             }
             else if (damageInfo.HasValue && damageInfo.Value.Weapon != null)
             {
-                // FIXED: damageInfo.Value.Weapon is already a ThingDef, not a Thing!
-                // No need to access .def - it IS the def
+                // damageInfo.Value.Weapon is already a ThingDef in RimWorld 1.6
                 ThingDef weaponDef = damageInfo.Value.Weapon;
                 killer = TryFindWeaponOwner(victim, weaponDef);
             }
@@ -104,7 +103,7 @@ namespace SolWorldMod
             if (victim?.Map == null)
                 return null;
 
-            // Look for pawns near the victim who have this weapon equipped - use LINQ
+            // Look for pawns near the victim who have this weapon equipped
             var nearbyPawns = victim.Map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer)
                 .Where(p => p.Position.DistanceTo(victim.Position) < 20);
 

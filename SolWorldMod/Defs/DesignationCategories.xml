@@ -3,7 +3,8 @@
   <DesignationCategoryDef>
     <defName>SolWorld_Arena</defName>
     <label>SolWorld Arena</label>
-    <description>Arena buildings</description>
+    <description>Buildings for automated crypto arena battles</description>
     <order>100</order>
+    <specialDesignatorClasses />
   </DesignationCategoryDef>
 </Defs>
