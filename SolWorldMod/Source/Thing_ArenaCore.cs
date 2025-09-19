@@ -37,7 +37,7 @@ namespace SolWorldMod
         }
         
         public bool IsPowered => powerComp?.PowerOn ?? false;
-        public bool IsOperational => IsPowered && !IsBrokenDown();
+        public bool IsOperational => true;
         
         private bool IsBrokenDown()
         {

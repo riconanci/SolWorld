@@ -1,12 +1,9 @@
-<!-- solworld/SolWorldMod/Defs/DesignationCategories.xml -->
 <?xml version="1.0" encoding="utf-8"?>
 <Defs>
   <DesignationCategoryDef>
     <defName>SolWorld_Arena</defName>
     <label>SolWorld Arena</label>
-    <description>Buildings for the automated crypto arena.</description>
+    <description>Arena buildings</description>
     <order>100</order>
-    <specialDesignatorClasses>
-    </specialDesignatorClasses>
   </DesignationCategoryDef>
 </Defs>
