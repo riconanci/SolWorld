@@ -16,7 +16,7 @@ namespace SolWorldMod
                 return;
             }
 
-            Log.Message($"SolWorld: Starting arena reset for {bounds.Area} cells");
+            Log.Message("SolWorld: Starting arena reset for " + bounds.Area + " cells");
 
             // Phase 1: Cleanup - Remove all temporary combat debris
             CleanupArena(map, bounds);
@@ -36,8 +36,9 @@ namespace SolWorldMod
                 if (!cell.InBounds(map))
                     continue;
 
-                // Collect all things that need to be removed
+                // Collect all things that need to be removed - can use LINQ in RimWorld 1.6
                 var thingsAtCell = map.thingGrid.ThingsAt(cell).ToList();
+                
                 foreach (var thing in thingsAtCell)
                 {
                     if (ShouldRemoveDuringCleanup(thing))
@@ -46,40 +47,34 @@ namespace SolWorldMod
                     }
                 }
 
-                // Clear filth - RimWorld 1.5 API
-                var filthList = map.thingGrid.ThingsAt(cell).Where(t => t.def.category == ThingCategory.Filth).ToList();
+                // Clear filth - use LINQ
+                var filthList = map.thingGrid.ThingsAt(cell)
+                    .Where(t => t.def.category == ThingCategory.Filth)
+                    .ToList();
                 foreach (var filth in filthList)
                 {
                     if (!filth.Destroyed)
                         filth.Destroy();
                 }
 
-                // Clear fire
-                var fire = map.thingGrid.ThingsAt(cell).FirstOrDefault(t => t.def.defName == "Fire");
-                if (fire != null && !fire.Destroyed)
+                // Clear fire - use LINQ
+                var fireList = map.thingGrid.ThingsAt(cell)
+                    .Where(t => t.def.defName == "Fire")
+                    .ToList();
+                foreach (var fire in fireList)
                 {
-                    fire.Destroy();
+                    if (!fire.Destroyed)
+                        fire.Destroy();
                 }
 
-                // Clear gas - simplified for RimWorld 1.5
-                // Note: Gas system may vary by RimWorld version
-                
                 // Clear snow
                 map.snowGrid.SetDepth(cell, 0f);
 
-                // Clear designations
+                // Clear designations - use LINQ
                 var designations = map.designationManager.AllDesignationsAt(cell).ToList();
                 foreach (var designation in designations)
                 {
                     map.designationManager.RemoveDesignation(designation);
-                }
-            }
-                
-                // Clear scorch marks and burn damage from terrain
-                var terrain = map.terrainGrid.TerrainAt(cell);
-                if (terrain.defName.Contains("Burned") || terrain.defName.Contains("Scorch"))
-                {
-                    // This will be fixed in the restore phase
                 }
             }
 
@@ -92,7 +87,7 @@ namespace SolWorldMod
                 }
             }
 
-            Log.Message($"SolWorld: Cleanup removed {thingsToDestroy.Count} temporary objects");
+            Log.Message("SolWorld: Cleanup removed " + thingsToDestroy.Count + " temporary objects");
         }
 
         private bool ShouldRemoveDuringCleanup(Thing thing)
@@ -173,28 +168,30 @@ namespace SolWorldMod
                 restoredCells++;
             }
 
-            Log.Message($"SolWorld: Restored {restoredCells} cells and {restoredThings} things");
+            Log.Message("SolWorld: Restored " + restoredCells + " cells and " + restoredThings + " things");
         }
 
         private void RestoreThingsAtCell(Map map, IntVec3 cell, BlueprintCell blueprintCell, ref int restoredThings)
         {
-            var currentThings = map.thingGrid.ThingsAt(cell).Where(t => 
-                t.def.defName != "SolWorld_ArenaCore" && 
-                t.def.defName != "SolWorld_RedSpawn" && 
-                t.def.defName != "SolWorld_BlueSpawn").ToList();
+            // Get current things - use LINQ in RimWorld 1.6
+            var currentThings = map.thingGrid.ThingsAt(cell)
+                .Where(t => t.def.defName != "SolWorld_ArenaCore" && 
+                           t.def.defName != "SolWorld_RedSpawn" && 
+                           t.def.defName != "SolWorld_BlueSpawn")
+                .ToList();
 
             // Create a set of expected things from blueprint
             var expectedThings = new HashSet<string>();
             foreach (var blueprintThing in blueprintCell.Things)
             {
-                var key = $"{blueprintThing.DefName}_{blueprintThing.StuffDefName}_{blueprintThing.Rotation}";
+                var key = blueprintThing.DefName + "_" + blueprintThing.StuffDefName + "_" + blueprintThing.Rotation.ToString();
                 expectedThings.Add(key);
             }
 
             // Remove things that shouldn't be there
             foreach (var currentThing in currentThings)
             {
-                var currentKey = $"{currentThing.def.defName}_{currentThing.Stuff?.defName}_{currentThing.Rotation}";
+                var currentKey = currentThing.def.defName + "_" + (currentThing.Stuff?.defName ?? "") + "_" + currentThing.Rotation.ToString();
                 if (!expectedThings.Contains(currentKey))
                 {
                     currentThing.Destroy();
@@ -206,7 +203,7 @@ namespace SolWorldMod
             {
                 var existingThing = currentThings.FirstOrDefault(t => 
                     t.def.defName == blueprintThing.DefName &&
-                    t.Stuff?.defName == blueprintThing.StuffDefName &&
+                    (t.Stuff?.defName ?? "") == (blueprintThing.StuffDefName ?? "") &&
                     t.Rotation == blueprintThing.Rotation);
 
                 if (existingThing != null)

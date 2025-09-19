@@ -4,7 +4,7 @@
   <name>SolWorld – Automated Crypto Arena (10v10)</name>
   <author>SolWorld Team</author>
   <supportedVersions>
-    <li>1.5</li>
+    <li>1.6</li>
   </supportedVersions>
   <packageId>solworld.arena</packageId>
   <description>
@@ -31,5 +31,6 @@
     <li>Ludeon.RimWorld.Royalty</li>
     <li>Ludeon.RimWorld.Ideology</li>
     <li>Ludeon.RimWorld.Biotech</li>
+    <li>Ludeon.RimWorld.Anomaly</li>
   </loadAfter>
 </ModMetaData>

@@ -1,5 +1,6 @@
 // solworld/SolWorldMod/Source/Thing_ArenaCore.cs
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -72,7 +73,6 @@ namespace SolWorldMod
                                 arenaComp.StartArena();
                             }
                         }
-                        // Removed disabled/disabledReason for now - causes protection level issues
                     };
                     
                     // Debug: Force next round
@@ -101,6 +101,7 @@ namespace SolWorldMod
                 var bounds = arenaComp.GetArenaBounds();
                 if (bounds.HasValue)
                 {
+                    // Can use LINQ ToList() in RimWorld 1.6
                     GenDraw.DrawFieldEdges(bounds.Value.Cells.ToList(), Color.yellow);
                 }
             }

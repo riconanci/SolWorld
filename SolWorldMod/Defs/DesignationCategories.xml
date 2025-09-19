@@ -1,35 +1,12 @@
-<!-- solworld/SolWorldMod/About/About.xml -->
+<!-- solworld/SolWorldMod/Defs/DesignationCategories.xml -->
 <?xml version="1.0" encoding="utf-8"?>
-<ModMetaData>
-  <name>SolWorld – Automated Crypto Arena (10v10)</name>
-  <author>SolWorld Team</author>
-  <supportedVersions>
-    <li>1.5</li>
-  </supportedVersions>
-  <packageId>solworld.arena</packageId>
-  <description>
-    Automated 10v10 arena battles with 5-minute cadence (30s preview + 4m combat).
-    
-    Features:
-    • No respawns - fight to the last pawn standing
-    • Crypto payouts via external backend integration
-    • Full arena reset after each round (corpses, items, terrain restored)
-    • Live scoreboard with kills and team status
-    • Token holder selection from Solana blockchain
-    
-    Place an Arena Core and two Team Spawners to begin automated rounds.
-    Configure backend API settings in mod options.
-    
-    WARNING: This mod requires an external backend server for crypto integration.
-  </description>
-  <modDependencies>
-  </modDependencies>
-  <incompatibleWith>
-  </incompatibleWith>
-  <loadAfter>
-    <li>Ludeon.RimWorld</li>
-    <li>Ludeon.RimWorld.Royalty</li>
-    <li>Ludeon.RimWorld.Ideology</li>
-    <li>Ludeon.RimWorld.Biotech</li>
-  </loadAfter>
-</ModMetaData>
+<Defs>
+  <DesignationCategoryDef>
+    <defName>SolWorld_Arena</defName>
+    <label>SolWorld Arena</label>
+    <description>Buildings for the automated crypto arena.</description>
+    <order>100</order>
+    <specialDesignatorClasses>
+    </specialDesignatorClasses>
+  </DesignationCategoryDef>
+</Defs>

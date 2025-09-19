@@ -1,5 +1,6 @@
 // solworld/SolWorldMod/Source/ArenaBounds.cs
 using System;
+using System.Linq;
 using UnityEngine;
 using Verse;
 
@@ -61,7 +62,7 @@ namespace SolWorldMod
 
         public void DrawBounds(CellRect bounds, Color color)
         {
-            // Draw the perimeter of the arena bounds
+            // Draw the perimeter of the arena bounds - can use ToList() in RimWorld 1.6
             GenDraw.DrawFieldEdges(bounds.Cells.ToList(), color);
             
             // Draw corner markers for better visibility

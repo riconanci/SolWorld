@@ -21,8 +21,8 @@ namespace SolWorldMod
         
         // Computed properties
         public bool IsDevMode => string.IsNullOrEmpty(hmacKeyId);
-        public string HoldersEndpoint => $"{apiBaseUrl?.TrimEnd('/')}/api/arena/holders";
-        public string ReportEndpoint => $"{apiBaseUrl?.TrimEnd('/')}/api/arena/report";
+        public string HoldersEndpoint => (apiBaseUrl?.TrimEnd('/') ?? "") + "/api/arena/holders";
+        public string ReportEndpoint => (apiBaseUrl?.TrimEnd('/') ?? "") + "/api/arena/report";
         
         public override void ExposeData()
         {

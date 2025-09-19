@@ -18,26 +18,27 @@ namespace SolWorldMod
             if (isInitialized)
                 return;
 
-            Log.Message($"SolWorld: Initializing arena blueprint for bounds {bounds}");
+            Log.Message("SolWorld: Initializing arena blueprint for bounds " + bounds.ToString());
             
             blueprint = new Dictionary<IntVec3, BlueprintCell>();
 
-            foreach (var cell in bounds.Cells)
+            foreach (var cellPos in bounds.Cells)
             {
-                if (!cell.InBounds(map))
+                if (!cellPos.InBounds(map))
                     continue;
 
                 var blueprintCell = new BlueprintCell
                 {
-                    Position = cell,
-                    OriginalTerrain = map.terrainGrid.TerrainAt(cell),
-                    OriginalRoof = map.roofGrid.RoofAt(cell),
-                    OriginalSnowDepth = map.snowGrid.GetDepth(cell),
+                    Position = cellPos,
+                    OriginalTerrain = map.terrainGrid.TerrainAt(cellPos),
+                    OriginalRoof = map.roofGrid.RoofAt(cellPos),
+                    OriginalSnowDepth = map.snowGrid.GetDepth(cellPos),
                     Things = new List<BlueprintThing>()
                 };
 
-                // Capture all non-temporary things at this cell
-                var thingsAtCell = map.thingGrid.ThingsAt(cell).ToList();
+                // Capture all non-temporary things at this cell - can use LINQ in RimWorld 1.6
+                var thingsAtCell = map.thingGrid.ThingsAt(cellPos).ToList();
+                
                 foreach (var thing in thingsAtCell)
                 {
                     // Skip temporary combat items and pawns
@@ -56,11 +57,14 @@ namespace SolWorldMod
                     }
                 }
 
-                blueprint[cell] = blueprintCell;
+                blueprint[cellPos] = blueprintCell;
             }
 
             isInitialized = true;
-            Log.Message($"SolWorld: Blueprint captured {blueprint.Count} cells with {blueprint.Values.Sum(c => c.Things.Count)} things");
+            
+            // Use LINQ to calculate total things
+            var totalThings = blueprint.Values.Sum(c => c.Things.Count);
+            Log.Message("SolWorld: Blueprint captured " + blueprint.Count + " cells with " + totalThings + " things");
         }
 
         private bool ShouldIncludeInBlueprint(Thing thing)
@@ -90,13 +94,17 @@ namespace SolWorldMod
             // Include buildings, plants, and other permanent structures
             return thing.def.category == ThingCategory.Building || 
                    thing.def.category == ThingCategory.Plant ||
-                   thing.def.building != null;  // Fixed: use 'building' instead of 'buildingProperties'
+                   thing.def.building != null;
         }
 
         public BlueprintCell GetBlueprintCell(IntVec3 position)
         {
-            blueprint?.TryGetValue(position, out var cell);
-            return cell;
+            if (blueprint == null)
+                return null;
+                
+            BlueprintCell foundCell = null;
+            blueprint.TryGetValue(position, out foundCell);
+            return foundCell;
         }
 
         public IEnumerable<BlueprintCell> GetAllCells()
@@ -145,7 +153,7 @@ namespace SolWorldMod
             var thingDef = GetThingDef();
             if (thingDef == null)
             {
-                Log.Warning($"SolWorld: Could not find ThingDef for {DefName}");
+                Log.Warning("SolWorld: Could not find ThingDef for " + DefName);
                 return null;
             }
 
@@ -161,7 +169,7 @@ namespace SolWorldMod
             // Restore hit points
             if (thing.def.useHitPoints && MaxHitPoints > 0)
             {
-                // Direct hit points assignment for RimWorld 1.5
+                // Direct hit points assignment for RimWorld 1.6
                 if (thing.HitPoints != CurrentHitPoints && CurrentHitPoints > 0)
                 {
                     thing.HitPoints = CurrentHitPoints;

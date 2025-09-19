@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using UnityEngine;
 using Verse;
 using RimWorld;
@@ -22,7 +21,6 @@ namespace SolWorldMod
         
         // Timing
         private int nextRoundTick = -1;
-        private int currentPhaseTicks = 0;
         private int phaseStartTick = 0;
         
         // Components
@@ -108,8 +106,12 @@ namespace SolWorldMod
         {
             if (map == null) return;
             
-            redSpawner = map.listerBuildings.AllBuildingsColonistOfDef(DefDatabase<ThingDef>.GetNamed("SolWorld_RedSpawn")).FirstOrDefault();
-            blueSpawner = map.listerBuildings.AllBuildingsColonistOfDef(DefDatabase<ThingDef>.GetNamed("SolWorld_BlueSpawn")).FirstOrDefault();
+            // RimWorld 1.6 uses LINQ - it's available now
+            var redSpawnerDef = DefDatabase<ThingDef>.GetNamed("SolWorld_RedSpawn");
+            var blueSpawnerDef = DefDatabase<ThingDef>.GetNamed("SolWorld_BlueSpawn");
+            
+            redSpawner = map.listerBuildings.AllBuildingsColonistOfDef(redSpawnerDef).FirstOrDefault();
+            blueSpawner = map.listerBuildings.AllBuildingsColonistOfDef(blueSpawnerDef).FirstOrDefault();
         }
         
         public bool HasValidSetup => arenaCore?.IsOperational == true && redSpawner != null && blueSpawner != null;
@@ -176,7 +178,7 @@ namespace SolWorldMod
             Log.Message($"SolWorld: Next round scheduled for tick {nextRoundTick} (in {(nextRoundTick - currentTime) / 60f:F0}s)");
         }
         
-        private async void StartPreviewPhase()
+        private void StartPreviewPhase()
         {
             CurrentState = ArenaState.Preview;
             phaseStartTick = Find.TickManager.TicksGame;
@@ -185,7 +187,7 @@ namespace SolWorldMod
             
             try
             {
-                // TODO: Implement CryptoReporter.FetchHoldersAsync() - for now use mock data
+                // Use mock data for now - TODO: Implement CryptoReporter.FetchHoldersAsync()
                 var mockHolders = GenerateMockHolders();
                 
                 if (mockHolders?.Length == 20)
@@ -249,14 +251,14 @@ namespace SolWorldMod
             phaseStartTick = Find.TickManager.TicksGame;
             
             // Unpause game
-            Find.TickManager.Pause();
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
             CurrentRoster.IsLive = true;
             
             Log.Message("SolWorld: Combat phase started");
             Messages.Message("Combat begins! Fight!", MessageTypeDefOf.PositiveEvent);
         }
         
-        private async void EndRound(string reason)
+        private void EndRound(string reason)
         {
             CurrentState = ArenaState.Ended;
             phaseStartTick = Find.TickManager.TicksGame;
@@ -359,7 +361,7 @@ namespace SolWorldMod
             // Set name to wallet short
             pawn.Name = new NameSingle(fighter.WalletShort);
             
-            // Give basic equipment - use a weapon that exists in RimWorld 1.5
+            // RimWorld 1.6 weapon names might be different
             var weaponDef = DefDatabase<ThingDef>.GetNamedSilentFail("Gun_Autopistol") ?? 
                            DefDatabase<ThingDef>.GetNamedSilentFail("Gun_Pistol") ?? 
                            DefDatabase<ThingDef>.GetNamedSilentFail("MeleeWeapon_Knife");
@@ -370,9 +372,6 @@ namespace SolWorldMod
                 pawn.equipment.AddEquipment((ThingWithComps)weapon);
             }
             
-            // Set team color (for identification)
-            // This could be done with apparel coloring if desired
-            
             return pawn;
         }
         
@@ -380,8 +379,10 @@ namespace SolWorldMod
         {
             if (CurrentRoster == null) return;
             
-            // Despawn all fighter pawns
-            foreach (var fighter in CurrentRoster.Red.Concat(CurrentRoster.Blue))
+            // Despawn all fighter pawns - can use LINQ in 1.6
+            var allFighters = CurrentRoster.Red.Concat(CurrentRoster.Blue);
+            
+            foreach (var fighter in allFighters)
             {
                 if (fighter.PawnRef?.Spawned == true)
                 {

@@ -1,6 +1,7 @@
 // solworld/SolWorldMod/Source/TeamRoster.cs
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Verse;
 
 namespace SolWorldMod
@@ -17,7 +18,7 @@ namespace SolWorldMod
         public Fighter(string walletFull, TeamColor team)
         {
             WalletFull = walletFull;
-            WalletShort = ShortenAddress(walletFull); // Inline method for now
+            WalletShort = ShortenAddress(walletFull);
             Team = team;
             Kills = 0;
             Alive = true;
@@ -28,7 +29,8 @@ namespace SolWorldMod
             if (string.IsNullOrEmpty(address) || address.Length < 10)
                 return address;
                 
-            return $"{address.Substring(0, 5)}....{address.Substring(address.Length - 5)}";
+            // Use traditional substring - no modern range operators
+            return address.Substring(0, 5) + "...." + address.Substring(address.Length - 5);
         }
     }
 
@@ -42,11 +44,11 @@ namespace SolWorldMod
         public int PreviewTicks { get; set; }
         public int CombatTicks { get; set; }
         
-        // Live counters
-        public int RedAlive => Red.Where(f => f.Alive).Count();
-        public int BlueAlive => Blue.Where(f => f.Alive).Count();
-        public int RedKills => Red.Select(f => f.Kills).Sum();
-        public int BlueKills => Blue.Select(f => f.Kills).Sum();
+        // Live counters - use LINQ (available in RimWorld 1.6)
+        public int RedAlive => Red.Count(f => f.Alive);
+        public int BlueAlive => Blue.Count(f => f.Alive);
+        public int RedKills => Red.Sum(f => f.Kills);
+        public int BlueKills => Blue.Sum(f => f.Kills);
         
         // Round reward info
         public float RoundRewardTotalSol { get; set; } = 1.0f;
@@ -60,7 +62,7 @@ namespace SolWorldMod
         public RoundRoster()
         {
             MatchId = GenerateMatchId();
-            PreviewTicks = SolWorldSettings.PREVIEW_SECONDS * 60; // Convert to ticks
+            PreviewTicks = SolWorldSettings.PREVIEW_SECONDS * 60;
             CombatTicks = SolWorldSettings.COMBAT_SECONDS * 60;
         }
         

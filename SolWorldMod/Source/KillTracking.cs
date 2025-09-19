@@ -20,7 +20,7 @@ namespace SolWorldMod
             }
             catch (System.Exception ex)
             {
-                Log.Error($"SolWorld: Error in kill tracking: {ex.Message}");
+                Log.Error("SolWorld: Error in kill tracking: " + ex.Message);
             }
         }
 
@@ -39,7 +39,7 @@ namespace SolWorldMod
             }
             catch (System.Exception ex)
             {
-                Log.Error($"SolWorld: Error in damage tracking: {ex.Message}");
+                Log.Error("SolWorld: Error in damage tracking: " + ex.Message);
             }
         }
 
@@ -61,18 +61,20 @@ namespace SolWorldMod
             // Mark victim as dead
             victimFighter.Alive = false;
             
-            Log.Message($"SolWorld: {victimFighter.WalletShort} ({victimFighter.Team}) was killed");
+            Log.Message("SolWorld: " + victimFighter.WalletShort + " (" + victimFighter.Team.ToString() + ") was killed");
 
             // Try to identify the killer and award kill credit
             Pawn killer = null;
-            if (damageInfo?.Instigator is Pawn instigatorPawn)
+            if (damageInfo.HasValue && damageInfo.Value.Instigator is Pawn instigatorPawn)
             {
                 killer = instigatorPawn;
             }
-            else if (damageInfo?.Weapon?.def != null)
+            else if (damageInfo.HasValue && damageInfo.Value.Weapon != null)
             {
-                // Try to find who fired the weapon based on recent combat log
-                killer = TryFindWeaponOwner(victim, damageInfo.Value.Weapon.def);
+                // FIXED: damageInfo.Value.Weapon is already a ThingDef, not a Thing!
+                // No need to access .def - it IS the def
+                ThingDef weaponDef = damageInfo.Value.Weapon;
+                killer = TryFindWeaponOwner(victim, weaponDef);
             }
 
             if (killer != null)
@@ -81,7 +83,7 @@ namespace SolWorldMod
                 if (killerFighter != null && killerFighter.Team != victimFighter.Team)
                 {
                     killerFighter.Kills++;
-                    Log.Message($"SolWorld: Kill credited to {killerFighter.WalletShort} ({killerFighter.Team}) - Total: {killerFighter.Kills}");
+                    Log.Message("SolWorld: Kill credited to " + killerFighter.WalletShort + " (" + killerFighter.Team.ToString() + ") - Total: " + killerFighter.Kills);
                 }
             }
 
@@ -91,6 +93,7 @@ namespace SolWorldMod
 
         private static Fighter FindFighterByPawn(RoundRoster roster, Pawn pawn)
         {
+            // Use LINQ (available in RimWorld 1.6)
             return roster.Red.FirstOrDefault(f => f.PawnRef == pawn) ??
                    roster.Blue.FirstOrDefault(f => f.PawnRef == pawn);
         }
@@ -98,24 +101,14 @@ namespace SolWorldMod
         private static Pawn TryFindWeaponOwner(Pawn victim, ThingDef weaponDef)
         {
             // This is a best-effort attempt to find who owns a weapon
-            // In practice, this is difficult without more complex tracking
-            
             if (victim?.Map == null)
                 return null;
 
-            // Look for pawns near the victim who have this weapon equipped
+            // Look for pawns near the victim who have this weapon equipped - use LINQ
             var nearbyPawns = victim.Map.mapPawns.SpawnedPawnsInFaction(Faction.OfPlayer)
                 .Where(p => p.Position.DistanceTo(victim.Position) < 20);
 
-            foreach (var pawn in nearbyPawns)
-            {
-                if (pawn.equipment?.Primary?.def == weaponDef)
-                {
-                    return pawn;
-                }
-            }
-
-            return null;
+            return nearbyPawns.FirstOrDefault(pawn => pawn.equipment?.Primary?.def == weaponDef);
         }
 
         private static void CheckForRoundEnd(MapComponent_SolWorldArena arenaComp)
@@ -130,28 +123,10 @@ namespace SolWorldMod
             // Check for team elimination
             if (roster.RedAlive == 0 || roster.BlueAlive == 0)
             {
-                Log.Message($"SolWorld: Team elimination detected - Red: {roster.RedAlive}, Blue: {roster.BlueAlive}");
+                Log.Message("SolWorld: Team elimination detected - Red: " + roster.RedAlive + ", Blue: " + roster.BlueAlive);
                 
                 // The MapComponent will handle the actual round ending in its next tick
                 // We just log here to track the trigger condition
-            }
-        }
-
-        // Additional patch for handling medical deaths (illness, bleeding out, etc.)
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(Pawn_HealthTracker), "CheckForStateChange")]
-        public static void Pawn_HealthTracker_CheckForStateChange_Postfix(Pawn_HealthTracker __instance, DamageInfo? dinfo, Hediff hediff)
-        {
-            try
-            {
-                if (__instance.Dead && __instance.pawn != null)
-                {
-                    HandlePawnDeath(__instance.pawn, dinfo);
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Error($"SolWorld: Error in health state tracking: {ex.Message}");
             }
         }
 
@@ -168,7 +143,7 @@ namespace SolWorldMod
                 killerFighter.Team != victimFighter.Team)
             {
                 killerFighter.Kills++;
-                Log.Message($"SolWorld: Manual kill attribution - {killerFighter.WalletShort} killed {victimFighter.WalletShort}");
+                Log.Message("SolWorld: Manual kill attribution - " + killerFighter.WalletShort + " killed " + victimFighter.WalletShort);
             }
         }
     }

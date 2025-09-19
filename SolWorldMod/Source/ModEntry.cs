@@ -38,12 +38,12 @@ namespace SolWorldMod
             listingStandard.Gap(4f);
 
             // Payout Percent
-            listingStandard.Label($"Payout Percent: {Settings.payoutPercent:P1}");
+            listingStandard.Label("Payout Percent: " + Settings.payoutPercent.ToString("P1"));
             Settings.payoutPercent = listingStandard.Slider(Settings.payoutPercent, 0.05f, 0.50f);
             listingStandard.Gap(4f);
 
             // Round Pool Amount
-            listingStandard.Label($"Round Pool Amount (SOL): {Settings.roundPoolSol:F2}");
+            listingStandard.Label("Round Pool Amount (SOL): " + Settings.roundPoolSol.ToString("F2"));
             Settings.roundPoolSol = listingStandard.Slider(Settings.roundPoolSol, 0.1f, 10.0f);
             listingStandard.Gap();
 
