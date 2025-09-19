@@ -1,0 +1,50 @@
+<!-- solworld/SolWorldMod/Defs/ThingDefs_Buildings/ThingDef_ArenaCore.xml -->
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <ThingDef ParentName="BuildingBase">
+    <defName>SolWorld_ArenaCore</defName>
+    <label>Arena Core</label>
+    <description>The central control system for automated crypto arena battles. Place this along with Red and Blue team spawners to define the arena bounds and begin 5-minute battle cycles.</description>
+    <thingClass>SolWorldMod.Thing_ArenaCore</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>Things/Building/ArenaCore</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(2,2)</drawSize>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <blockWind>true</blockWind>
+    <scatterableOnMapGen>false</scatterableOnMapGen>
+    <fillPercent>0.4</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
+    <pathCost>50</pathCost>
+    <statBases>
+      <MaxHitPoints>500</MaxHitPoints>
+      <WorkToBuild>2000</WorkToBuild>
+      <Flammability>1.0</Flammability>
+    </statBases>
+    <costList>
+      <Steel>100</Steel>
+      <ComponentIndustrial>5</ComponentIndustrial>
+      <Gold>20</Gold>
+    </costList>
+    <comps>
+      <li Class="CompProperties_Power">
+        <compClass>CompPowerTrader</compClass>
+        <basePowerConsumption>200</basePowerConsumption>
+      </li>
+      <li Class="CompProperties_Flickable"/>
+    </comps>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <researchPrerequisites>
+      <li>Electricity</li>
+    </researchPrerequisites>
+    <size>(2,2)</size>
+    <rotatable>false</rotatable>
+    <terrainAffordanceNeeded>Medium</terrainAffordanceNeeded>
+    <holdsRoof>false</holdsRoof>
+    <specialDisplayRadius>25</specialDisplayRadius>
+  </ThingDef>
+</Defs>

@@ -1,0 +1,94 @@
+<!-- solworld/SolWorldMod/Source/SolWorldMod.csproj -->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputPath>../Assemblies/</OutputPath>
+    <AssemblyName>SolWorldMod</AssemblyName>
+    <RootNamespace>SolWorldMod</RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <DebugType>portable</DebugType>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Verse">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Verse.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Debug: Print RimWorld directory being used -->
+  <Target Name="ShowRimWorldDir" BeforeTargets="Build">
+    <Message Text="Using RimWorldDir: $(RimWorldDir)" Importance="high" />
+    <Message Text="Looking for DLLs in: $(RimWorldDir)\RimWorldWin64_Data\Managed\" Importance="high" />
+  </Target>
+
+  <ItemGroup>
+    <!-- Core assembly (should always exist) -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    
+    <!-- Try Verse.dll first, fallback if missing -->
+    <Reference Include="Verse" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\Verse.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Verse.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    
+    <!-- Try multiple possible Harmony DLL names -->
+    <Reference Include="0Harmony" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Harmony" Condition="!Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll') And Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\Harmony.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="HarmonyLib" Condition="!Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll') And !Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\Harmony.dll') And Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\HarmonyLib.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\HarmonyLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    
+    <!-- Unity DLLs -->
+    <Reference Include="UnityEngine" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule" Condition="Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll')">
+      <HintPath>$(RimWorldDir)\RimWorldWin64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Fallback: Use NuGet Harmony if RimWorld doesn't bundle it -->
+  <ItemGroup Condition="!Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\0Harmony.dll') And !Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\Harmony.dll') And !Exists('$(RimWorldDir)\RimWorldWin64_Data\Managed\HarmonyLib.dll')">
+    <PackageReference Include="HarmonyX" Version="2.10.1" />
+  </ItemGroup>
+
+</Project>

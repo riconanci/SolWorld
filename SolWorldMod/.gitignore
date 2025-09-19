@@ -1,0 +1,88 @@
+# solworld/.gitignore
+
+## Visual Studio / .NET Build Outputs
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.cache
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+## RimWorld Mod Specific
+# Compiled mod assembly (this gets built fresh each time)
+SolWorldMod/Assemblies/SolWorldMod.dll
+SolWorldMod/Assemblies/SolWorldMod.pdb
+
+# Don't ignore the Assemblies folder itself - RimWorld needs it
+!SolWorldMod/Assemblies/
+!SolWorldMod/Assemblies/.gitkeep
+
+## Node.js Backend
+backend/node_modules/
+backend/dist/
+backend/build/
+backend/.env
+backend/.env.local
+backend/.env.production
+backend/logs/
+backend/*.log
+
+## IDE and Editor Files
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+.idea/
+
+## OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+## Temporary Files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+*.patch
+
+## RimWorld Testing
+# Local test saves and logs
+*.rwsave
+Player.log
+Player-prev.log
+
+## Development Environment
+# Local RimWorld path config (if using Directory.Build.props)
+Directory.Build.props.local
+
+## Security - Never commit these!
+# Crypto wallet private keys
+*.key
+*secret*
+*private*
+backend/.env*
+backend/config/production.json
+
+## Package Management
+backend/package-lock.json
+backend/yarn.lock
+
+## Build System Cache
+.nuget/
+packages/
+
+## Documentation Build
+docs/_build/
+docs/.doctrees/

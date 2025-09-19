@@ -1,0 +1,85 @@
+<!-- solworld/SolWorldMod/Defs/ThingDefs_Buildings/ThingDef_TeamSpawners.xml -->
+<?xml version="1.0" encoding="utf-8"?>
+<Defs>
+  <!-- Red Team Spawner -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>SolWorld_RedSpawn</defName>
+    <label>Red Team Spawner</label>
+    <description>Spawn point for the Red team. Place this opposite the Blue spawner to define one corner of the arena rectangle. Fighters will spawn around this location.</description>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>Things/Building/RedSpawner</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <color>(200,50,50)</color>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <blockWind>false</blockWind>
+    <scatterableOnMapGen>false</scatterableOnMapGen>
+    <fillPercent>0.2</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
+    <pathCost>25</pathCost>
+    <statBases>
+      <MaxHitPoints>200</MaxHitPoints>
+      <WorkToBuild>800</WorkToBuild>
+      <Flammability>1.0</Flammability>
+    </statBases>
+    <costList>
+      <Steel>25</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </costList>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <researchPrerequisites>
+      <li>Electricity</li>
+    </researchPrerequisites>
+    <size>(1,1)</size>
+    <rotatable>false</rotatable>
+    <terrainAffordanceNeeded>Light</terrainAffordanceNeeded>
+    <holdsRoof>false</holdsRoof>
+    <specialDisplayRadius>5</specialDisplayRadius>
+  </ThingDef>
+
+  <!-- Blue Team Spawner -->
+  <ThingDef ParentName="BuildingBase">
+    <defName>SolWorld_BlueSpawn</defName>
+    <label>Blue Team Spawner</label>
+    <description>Spawn point for the Blue team. Place this opposite the Red spawner to define the other corner of the arena rectangle. Fighters will spawn around this location.</description>
+    <thingClass>Building</thingClass>
+    <category>Building</category>
+    <graphicData>
+      <texPath>Things/Building/BlueSpawner</texPath>
+      <graphicClass>Graphic_Single</graphicClass>
+      <drawSize>(1,1)</drawSize>
+      <color>(50,50,200)</color>
+    </graphicData>
+    <altitudeLayer>Building</altitudeLayer>
+    <passability>PassThroughOnly</passability>
+    <blockWind>false</blockWind>
+    <scatterableOnMapGen>false</scatterableOnMapGen>
+    <fillPercent>0.2</fillPercent>
+    <canOverlapZones>false</canOverlapZones>
+    <pathCost>25</pathCost>
+    <statBases>
+      <MaxHitPoints>200</MaxHitPoints>
+      <WorkToBuild>800</WorkToBuild>
+      <Flammability>1.0</Flammability>
+    </statBases>
+    <costList>
+      <Steel>25</Steel>
+      <ComponentIndustrial>1</ComponentIndustrial>
+    </costList>
+    <designationCategory>SolWorld_Arena</designationCategory>
+    <constructEffect>ConstructMetal</constructEffect>
+    <researchPrerequisites>
+      <li>Electricity</li>
+    </researchPrerequisites>
+    <size>(1,1)</size>
+    <rotatable>false</rotatable>
+    <terrainAffordanceNeeded>Light</terrainAffordanceNeeded>
+    <holdsRoof>false</holdsRoof>
+    <specialDisplayRadius>5</specialDisplayRadius>
+  </ThingDef>
+</Defs>
