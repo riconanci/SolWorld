@@ -21,11 +21,11 @@ namespace SolWorldMod
         private RoundRoster currentRoster;
         private int nextRoundTick = -1;
         
-        // Timing constants - Preview uses REAL TIME (works during pause), Combat uses GAME TIME
-        private DateTime previewStartTime;
+        // NEW APPROACH: No pausing, just use ultra-slow time
+        private int previewStartTick;
         private int combatStartTick;
-        private const float PREVIEW_SECONDS = 30f; // Real-time during pause
-        private const int COMBAT_TICKS = 90 * 60; // 1.5 minutes (90 seconds) game time
+        private const int PREVIEW_TICKS = 30 * 60; // 30 seconds at normal speed
+        private const int COMBAT_TICKS = 90 * 60; // 90 seconds at normal speed
         private const int CADENCE_TICKS = 300 * 60; // 5 minutes between rounds
         
         // Team management - use existing factions
@@ -35,12 +35,6 @@ namespace SolWorldMod
         private List<Pawn> blueTeamPawns = new List<Pawn>();
         private Dictionary<Pawn, TeamColor> pawnTeamMap = new Dictionary<Pawn, TeamColor>();
         
-        // SIMPLE UNPAUSE SYSTEM - Back to basics
-        private bool needsUnpause = false;
-        private int unpauseAttempts = 0;
-        private const int MAX_UNPAUSE_ATTEMPTS = 300; // Try for 5 seconds
-        private int unpauseDelay = 0;
-        
         // Combat enforcement
         private bool combatInitiated = false;
         private int lastCombatEnforcementTick = -1;
@@ -49,6 +43,10 @@ namespace SolWorldMod
         private ArenaBounds arenaBounds;
         private ArenaBlueprint arenaBlueprint;
         private ArenaReset arenaReset;
+        
+        // Time control state - NO PAUSE approach
+        private TimeSpeed originalTimeSpeed;
+        private bool timeControlActive = false;
         
         // Accessors
         public ArenaState CurrentState => currentState;
@@ -71,11 +69,12 @@ namespace SolWorldMod
             Scribe_Values.Look(ref isActive, "isActive", false);
             Scribe_Values.Look(ref currentState, "currentState", ArenaState.Idle);
             Scribe_Values.Look(ref nextRoundTick, "nextRoundTick", -1);
+            Scribe_Values.Look(ref previewStartTick, "previewStartTick", -1);
             Scribe_Values.Look(ref combatStartTick, "combatStartTick", -1);
             Scribe_Values.Look(ref combatInitiated, "combatInitiated", false);
             Scribe_Values.Look(ref lastCombatEnforcementTick, "lastCombatEnforcementTick", -1);
-            Scribe_Values.Look(ref needsUnpause, "needsUnpause", false);
-            Scribe_Values.Look(ref unpauseAttempts, "unpauseAttempts", 0);
+            Scribe_Values.Look(ref timeControlActive, "timeControlActive", false);
+            Scribe_Values.Look(ref originalTimeSpeed, "originalTimeSpeed", TimeSpeed.Normal);
             Scribe_Deep.Look(ref currentRoster, "currentRoster");
             Scribe_References.Look(ref redTeamFaction, "redTeamFaction");
             Scribe_References.Look(ref blueTeamFaction, "blueTeamFaction");
@@ -110,28 +109,6 @@ namespace SolWorldMod
                 
             var currentTick = Find.TickManager.TicksGame;
             
-            // SIMPLE UNPAUSE - Wait a few ticks then try
-            if (needsUnpause)
-            {
-                if (unpauseDelay > 0)
-                {
-                    unpauseDelay--;
-                    return; // Wait before trying to unpause
-                }
-                
-                if (unpauseAttempts < MAX_UNPAUSE_ATTEMPTS)
-                {
-                    AttemptBasicUnpause();
-                    return;
-                }
-                else
-                {
-                    // Give up and force start combat
-                    Log.Error("SolWorld: UNPAUSE FAILED - FORCING COMBAT START!");
-                    ForceStartCombatAnyway();
-                }
-            }
-            
             // Check if it's time for the next scheduled round
             if (currentState == ArenaState.Idle && nextRoundTick > 0 && currentTick >= nextRoundTick)
             {
@@ -157,98 +134,32 @@ namespace SolWorldMod
             }
         }
         
-        // ULTRA SIMPLE UNPAUSE - Just the basics
-        private void AttemptBasicUnpause()
-        {
-            unpauseAttempts++;
-            
-            // Log every second
-            if (unpauseAttempts % 60 == 0)
-            {
-                Log.Message($"SolWorld: Basic unpause attempt {unpauseAttempts}/300");
-                Log.Message($"  Game state: Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
-            }
-            
-            try
-            {
-                // Method 1: Just set speed to Normal
-                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-                
-                // Method 2: If still paused, toggle it
-                if (Find.TickManager.Paused)
-                {
-                    Find.TickManager.TogglePaused();
-                }
-                
-                // Check if we succeeded
-                bool success = !Find.TickManager.Paused && Find.TickManager.CurTimeSpeed == TimeSpeed.Normal;
-                
-                if (success)
-                {
-                    Log.Message($"SolWorld: ===== BASIC UNPAUSE SUCCESS AFTER {unpauseAttempts} ATTEMPTS! =====");
-                    needsUnpause = false;
-                    unpauseAttempts = 0;
-                    unpauseDelay = 0;
-                    
-                    if (currentRoster != null)
-                    {
-                        currentRoster.IsLive = true;
-                        InitiateAggressiveCombat();
-                        Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"SolWorld: Basic unpause failed: {ex.Message}");
-            }
-        }
-        
-        private void ForceStartCombatAnyway()
-        {
-            Log.Message("SolWorld: FORCING COMBAT START WITHOUT UNPAUSE!");
-            
-            needsUnpause = false;
-            unpauseAttempts = 0;
-            unpauseDelay = 0;
-            
-            if (currentRoster != null)
-            {
-                currentRoster.IsLive = true;
-                InitiateAggressiveCombat();
-                Messages.Message("COMBAT FORCED TO START (game still paused)!", MessageTypeDefOf.CautionInput);
-                
-                // Give user manual control
-                Messages.Message("Press SPACE to unpause manually!", MessageTypeDefOf.NeutralEvent);
-            }
-        }
-        
         private void HandlePhaseTransitions()
         {
+            var currentTick = Find.TickManager.TicksGame;
+            
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    // Use REAL TIME for preview (works during pause)
-                    var previewElapsed = (float)(DateTime.Now - previewStartTime).TotalSeconds;
+                    var previewElapsed = currentTick - previewStartTick;
                     
                     // Log every 5 seconds during preview
-                    if ((int)previewElapsed % 5 == 0 && (int)previewElapsed != 0)
+                    if (previewElapsed % 300 == 0 && previewElapsed > 0)
                     {
-                        var timeLeft = PREVIEW_SECONDS - previewElapsed;
+                        var timeLeft = (PREVIEW_TICKS - previewElapsed) / 60f;
                         Log.Message($"SolWorld: Preview time remaining: {timeLeft:F0} seconds");
                     }
                     
-                    // CRITICAL: Transition to combat IMMEDIATELY when time is up
-                    if (previewElapsed >= PREVIEW_SECONDS)
+                    // CRITICAL: Transition to combat when preview time is up
+                    if (previewElapsed >= PREVIEW_TICKS)
                     {
-                        Log.Message("SolWorld: 30 seconds elapsed - IMMEDIATE TRANSITION TO COMBAT!");
+                        Log.Message("SolWorld: Preview complete - STARTING COMBAT!");
                         TransitionToCombat();
                     }
                     break;
                     
                 case ArenaState.Combat:
-                    // Use GAME TIME for combat
-                    var combatElapsed = Find.TickManager.TicksGame - combatStartTick;
+                    var combatElapsed = currentTick - combatStartTick;
                     if (combatElapsed >= COMBAT_TICKS)
                     {
                         EndRound("Time limit reached (90 seconds)");
@@ -261,7 +172,7 @@ namespace SolWorldMod
                     
                 case ArenaState.Ended:
                     // Quick transition to reset after 3 seconds
-                    var endElapsed = Find.TickManager.TicksGame - combatStartTick - COMBAT_TICKS;
+                    var endElapsed = currentTick - combatStartTick - COMBAT_TICKS;
                     if (endElapsed >= 180) // 3 seconds
                     {
                         StartResetPhase();
@@ -270,13 +181,46 @@ namespace SolWorldMod
                     
                 case ArenaState.Resetting:
                     // Quick reset after 2 seconds, then schedule next round
-                    var resetElapsed = Find.TickManager.TicksGame - combatStartTick - COMBAT_TICKS;
+                    var resetElapsed = currentTick - combatStartTick - COMBAT_TICKS;
                     if (resetElapsed >= 300) // 5 seconds total
                     {
                         CompleteReset();
                     }
                     break;
             }
+        }
+        
+        // NEW: Time control methods - NO PAUSE, just speed changes
+        private void SetFastPreviewTime()
+        {
+            if (!timeControlActive)
+            {
+                originalTimeSpeed = Find.TickManager.CurTimeSpeed;
+                timeControlActive = true;
+                Log.Message($"SolWorld: Saving original time speed: {originalTimeSpeed}");
+            }
+            
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Ultrafast;
+            Log.Message("SolWorld: Set time to ULTRAFAST for 30-second preview");
+            
+            Messages.Message("30-SECOND PREVIEW: Teams spawned! Time accelerated.", MessageTypeDefOf.PositiveEvent);
+        }
+        
+        private void RestoreNormalTime()
+        {
+            if (timeControlActive)
+            {
+                Find.TickManager.CurTimeSpeed = originalTimeSpeed;
+                timeControlActive = false;
+                Log.Message($"SolWorld: Restored time speed to: {originalTimeSpeed}");
+            }
+            else
+            {
+                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+                Log.Message("SolWorld: Set time speed to Normal");
+            }
+            
+            Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
         }
         
         public void RegisterArenaCore(Thing_ArenaCore core)
@@ -361,11 +305,16 @@ namespace SolWorldMod
             isActive = false;
             currentState = ArenaState.Idle;
             nextRoundTick = -1;
+            previewStartTick = -1;
             combatStartTick = -1;
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
-            needsUnpause = false;
-            unpauseAttempts = 0;
+            
+            // Restore time if we were controlling it
+            if (timeControlActive)
+            {
+                RestoreNormalTime();
+            }
             
             if (currentRoster != null)
             {
@@ -411,11 +360,9 @@ namespace SolWorldMod
             Log.Message("SolWorld: ===== STARTING NEW ROUND =====");
             
             currentState = ArenaState.Preview;
-            previewStartTime = DateTime.Now; // Real-time tracking for paused preview
+            previewStartTick = Find.TickManager.TicksGame; // Use game ticks for everything
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
-            needsUnpause = false;
-            unpauseAttempts = 0;
             
             try
             {
@@ -439,10 +386,9 @@ namespace SolWorldMod
                 Log.Message("SolWorld: ===== SPAWNING TEAMS =====");
                 SpawnBothTeams();
                 
-                // Step 5: PAUSE using the correct RimWorld 1.6 method
-                Log.Message("SolWorld: ===== PAUSING GAME =====");
-                Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
-                Log.Message($"SolWorld: Game paused for 30-second preview - Speed now: {Find.TickManager.CurTimeSpeed}, Paused: {Find.TickManager.Paused}");
+                // Step 5: NO PAUSE - Just accelerate time during preview
+                Log.Message("SolWorld: ===== SETTING FAST TIME =====");
+                SetFastPreviewTime();
                 
                 var payoutText = currentRoster.PerWinnerPayout.ToString("F3");
                 Messages.Message("30-SECOND PREVIEW: Round " + currentRoster.MatchId + " - " + payoutText + " SOL per winner", MessageTypeDefOf.PositiveEvent);
@@ -888,13 +834,13 @@ namespace SolWorldMod
             
             currentState = ArenaState.Combat;
             combatStartTick = Find.TickManager.TicksGame;
-            combatInitiated = false;
+            combatInitiated = false; // Will be set to true after restoring time
             
-            // Simple approach: Wait a bit then try to unpause
-            Log.Message("SolWorld: Starting basic unpause in 3 seconds...");
-            needsUnpause = true;
-            unpauseAttempts = 0;
-            unpauseDelay = 180; // Wait 3 seconds before trying to unpause
+            // Restore normal time speed for combat
+            RestoreNormalTime();
+            
+            // Start combat immediately
+            InitiateAggressiveCombat();
         }
         
         private void InitiateAggressiveCombat()
@@ -903,6 +849,11 @@ namespace SolWorldMod
             
             combatInitiated = true;
             lastCombatEnforcementTick = Find.TickManager.TicksGame;
+            
+            if (currentRoster != null)
+            {
+                currentRoster.IsLive = true;
+            }
             
             // Make teams TRULY hostile to each other
             SetupProperFactionHostility();
@@ -1449,11 +1400,16 @@ namespace SolWorldMod
         {
             currentState = ArenaState.Idle;
             currentRoster = null;
+            previewStartTick = -1;
             combatStartTick = -1;
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
-            needsUnpause = false;
-            unpauseAttempts = 0;
+            
+            // Make sure time is restored to normal
+            if (timeControlActive)
+            {
+                RestoreNormalTime();
+            }
             
             ScheduleNextRound(); // Schedule next round in 5 minutes
             
@@ -1496,14 +1452,16 @@ namespace SolWorldMod
         
         public float GetTimeLeftInCurrentPhase()
         {
+            var currentTick = Find.TickManager.TicksGame;
+            
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    var previewElapsed = (float)(DateTime.Now - previewStartTime).TotalSeconds;
-                    return Math.Max(0, PREVIEW_SECONDS - previewElapsed);
+                    var previewElapsed = currentTick - previewStartTick;
+                    return Math.Max(0, (PREVIEW_TICKS - previewElapsed) / 60f);
                     
                 case ArenaState.Combat:
-                    var combatElapsed = Find.TickManager.TicksGame - combatStartTick;
+                    var combatElapsed = currentTick - combatStartTick;
                     return Math.Max(0, (COMBAT_TICKS - combatElapsed) / 60f);
                     
                 default:
@@ -1518,7 +1476,7 @@ namespace SolWorldMod
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    return "PREVIEW: " + timeLeft.ToString("F0") + "s (PAUSED)";
+                    return "PREVIEW: " + timeLeft.ToString("F0") + "s (FAST TIME)";
                 case ArenaState.Combat:
                     return "COMBAT: " + timeLeft.ToString("F0") + "s";
                 case ArenaState.Ended:
@@ -1599,33 +1557,28 @@ namespace SolWorldMod
             return pawnTeamMap.TryGetValue(pawn, out var team) ? team : (TeamColor?)null;
         }
         
-        // MANUAL UNPAUSE METHOD - Can be called from UI (FIXED VERSION)
+        // MANUAL UNPAUSE METHOD - Now just restores normal time speed
         public void ForceUnpause()
         {
-            Log.Message("SolWorld: MANUAL FORCE UNPAUSE called!");
+            Log.Message("SolWorld: MANUAL FORCE TIME RESTORE called!");
             
             try
             {
-                // Use the simple RimWorld 1.6 approach from your examples
-                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+                // Restore normal time speed
+                RestoreNormalTime();
                 
-                if (Find.TickManager.Paused)
-                {
-                    Find.TickManager.TogglePaused();
-                }
+                Log.Message($"SolWorld: Manual time restore result - Speed: {Find.TickManager.CurTimeSpeed}");
                 
-                Log.Message($"SolWorld: Manual unpause result - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
-                
-                // If we're in preview mode and manual unpause, start combat immediately
+                // If we're in preview mode and manual restore, start combat immediately
                 if (currentState == ArenaState.Preview && currentRoster != null)
                 {
                     TransitionToCombat();
-                    Messages.Message("Manual unpause - starting combat immediately!", MessageTypeDefOf.PositiveEvent);
+                    Messages.Message("Manual time restore - starting combat immediately!", MessageTypeDefOf.PositiveEvent);
                 }
             }
             catch (Exception ex)
             {
-                Log.Error($"SolWorld: Manual unpause failed: {ex.Message}");
+                Log.Error($"SolWorld: Manual time restore failed: {ex.Message}");
             }
         }
         
