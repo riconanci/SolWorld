@@ -1,7 +1,28 @@
-// solworld/SolWorldMod/Source/MapComponent_SolWorldArena.cs
+// Debug: Test movement
+                        yield return new Command_Action
+                        {
+                            defaultLabel = "DEV: Test Movement",
+                            defaultDesc = "Test pawn movement without combat (dev mode only)",
+                            icon = BaseContent.BadTex,
+                            action = () => {
+                                arenaComp.TestCombatMovement();
+                            }
+                        };
+                        
+                        // Debug: Force unpause
+                        yield return new Command_Action
+                        {
+                            defaultLabel = "DEV: Force Unpause",
+                            defaultDesc = "Manually force unpause and start combat (dev mode only)",
+                            icon = BaseContent.BadTex,
+                            action = () => {
+                                arenaComp.ForceUnpause();
+                            }
+                        };// solworld/SolWorldMod/Source/MapComponent_SolWorldArena.cs
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using UnityEngine;
 using Verse;
 using Verse.AI;
@@ -21,26 +42,26 @@ namespace SolWorldMod
         private RoundRoster currentRoster;
         private int nextRoundTick = -1;
         
-        // CORRECT TIMING: Preview uses REAL TIME (works during pause), Combat uses GAME TIME
+        // Timing constants - Preview uses REAL TIME (works during pause), Combat uses GAME TIME
         private DateTime previewStartTime;
         private int combatStartTick;
-        private const float PREVIEW_SECONDS = 30f; // Real-time during pause - ALWAYS WORKS
-        private const int COMBAT_TICKS = 240 * 60; // 4 minutes (240 seconds) game time
+        private const float PREVIEW_SECONDS = 30f; // Real-time during pause
+        private const int COMBAT_TICKS = 90 * 60; // 1.5 minutes (90 seconds) game time
         private const int CADENCE_TICKS = 300 * 60; // 5 minutes between rounds
         
-        // FIXED: Use existing hostile factions instead of creating custom ones
-        private Faction redTeamFaction; // Will be hostile to player
-        private Faction blueTeamFaction; // Will be friendly to player
+        // Team management - use existing factions
+        private Faction redTeamFaction;
+        private Faction blueTeamFaction;
         private List<Pawn> redTeamPawns = new List<Pawn>();
         private List<Pawn> blueTeamPawns = new List<Pawn>();
         private Dictionary<Pawn, TeamColor> pawnTeamMap = new Dictionary<Pawn, TeamColor>();
         
-        // FIXED: Direct unpause system
+        // Unpause system
         private bool needsUnpause = false;
         private int unpauseAttempts = 0;
-        private const int MAX_UNPAUSE_ATTEMPTS = 30; // Try for 30 ticks
+        private const int MAX_UNPAUSE_ATTEMPTS = 30;
         
-        // Combat enforcement tracking
+        // Combat enforcement
         private bool combatInitiated = false;
         private int lastCombatEnforcementTick = -1;
         
@@ -109,7 +130,7 @@ namespace SolWorldMod
                 
             var currentTick = Find.TickManager.TicksGame;
             
-            // CRITICAL: Handle unpause attempts FIRST every tick
+            // Handle unpause attempts FIRST every tick
             if (needsUnpause && unpauseAttempts < MAX_UNPAUSE_ATTEMPTS)
             {
                 HandleUnpauseAttempt();
@@ -124,7 +145,7 @@ namespace SolWorldMod
                 return;
             }
             
-            // Handle phase transitions - CRITICAL: Different timing systems
+            // Handle phase transitions
             HandlePhaseTransitions();
             
             // Combat enforcement every 3 seconds during combat
@@ -147,42 +168,112 @@ namespace SolWorldMod
             
             Log.Message($"SolWorld: Unpause attempt {unpauseAttempts}/{MAX_UNPAUSE_ATTEMPTS} - Current state: Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
             
-            // DIRECT: Set time speed to Normal (this should force unpause)
+            // MOST AGGRESSIVE UNPAUSE POSSIBLE
+            try
+            {
+                // Method 1: Direct property assignment (if accessible)
+                var wasPaused = Find.TickManager.Paused;
+                
+                // Method 2: Force time speed changes
+                if (Find.TickManager.CurTimeSpeed == TimeSpeed.Paused)
+                {
+                    Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+                    Log.Message("SolWorld: Changed speed from Paused to Normal");
+                }
+                
+                // Method 3: Multiple toggle attempts if still paused
+                if (Find.TickManager.Paused)
+                {
+                    Find.TickManager.TogglePaused();
+                    Log.Message("SolWorld: Called TogglePaused()");
+                }
+                
+                // Method 4: Reflection to directly set the paused field
+                if (Find.TickManager.Paused)
+                {
+                    try
+                    {
+                        var tickManagerType = typeof(TickManager);
+                        var pausedField = tickManagerType.GetField("paused", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (pausedField != null)
+                        {
+                            pausedField.SetValue(Find.TickManager, false);
+                            Log.Message("SolWorld: Used reflection to force paused=false");
+                        }
+                        
+                        // Also try to set time speed via reflection
+                        var timeSpeedField = tickManagerType.GetField("curTimeSpeed", BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (timeSpeedField != null)
+                        {
+                            timeSpeedField.SetValue(Find.TickManager, TimeSpeed.Normal);
+                            Log.Message("SolWorld: Used reflection to force speed=Normal");
+                        }
+                    }
+                    catch (Exception reflectionEx)
+                    {
+                        Log.Warning($"SolWorld: Reflection unpause failed: {reflectionEx.Message}");
+                    }
+                }
+                
+                // Method 5: Try to find and call any unpause methods
+                try
+                {
+                    var methods = typeof(TickManager).GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+                    foreach (var method in methods)
+                    {
+                        if (method.Name.ToLower().Contains("unpause") || method.Name.ToLower().Contains("resume"))
+                        {
+                            if (method.GetParameters().Length == 0)
+                            {
+                                method.Invoke(Find.TickManager, null);
+                                Log.Message($"SolWorld: Called method {method.Name}");
+                            }
+                        }
+                    }
+                }
+                catch (Exception methodEx)
+                {
+                    Log.Warning($"SolWorld: Method search failed: {methodEx.Message}");
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Unpause attempt failed: {ex.Message}");
+            }
+            
+            // Force speed to Normal regardless
             if (Find.TickManager.CurTimeSpeed != TimeSpeed.Normal)
             {
                 Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-                Log.Message($"SolWorld: Forced TimeSpeed to Normal - Result: Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
             }
             
-            // If still paused after setting speed, use toggle
-            if (Find.TickManager.Paused)
-            {
-                Find.TickManager.TogglePaused();
-                Log.Message($"SolWorld: Used TogglePaused - Result: Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
-            }
+            Log.Message($"SolWorld: After unpause attempts - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
             
-            // Success check
-            if (!Find.TickManager.Paused && Find.TickManager.CurTimeSpeed == TimeSpeed.Normal)
+            // Success check - be less strict about success
+            bool isUnpaused = !Find.TickManager.Paused || Find.TickManager.CurTimeSpeed == TimeSpeed.Normal;
+            
+            if (isUnpaused || unpauseAttempts >= MAX_UNPAUSE_ATTEMPTS)
             {
-                needsUnpause = false;
-                unpauseAttempts = 0;
-                Log.Message("SolWorld: ===== UNPAUSE SUCCESS! =====");
+                if (isUnpaused)
+                {
+                    Log.Message("SolWorld: ===== UNPAUSE SUCCESS! =====");
+                }
+                else
+                {
+                    Log.Warning("SolWorld: ===== UNPAUSE GAVE UP AFTER 30 ATTEMPTS! =====");
+                }
                 
-                // NOW start combat
-                currentRoster.IsLive = true;
-                InitiateNaturalCombat();
-                Messages.Message("COMBAT STARTED! 4 minutes to fight!", MessageTypeDefOf.PositiveEvent);
-            }
-            else if (unpauseAttempts >= MAX_UNPAUSE_ATTEMPTS)
-            {
-                Log.Error("SolWorld: ===== UNPAUSE FAILED AFTER 30 ATTEMPTS! =====");
                 needsUnpause = false;
                 unpauseAttempts = 0;
                 
-                // Force combat anyway
-                currentRoster.IsLive = true;
-                InitiateNaturalCombat();
-                Messages.Message("COMBAT STARTED (paused)! Manual unpause required!", MessageTypeDefOf.RejectInput);
+                // Start combat regardless of pause state
+                if (currentRoster != null)
+                {
+                    currentRoster.IsLive = true;
+                    InitiateAggressiveCombat();
+                    Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
+                }
             }
         }
         
@@ -191,7 +282,7 @@ namespace SolWorldMod
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    // CRITICAL: Use REAL TIME for preview (works during pause)
+                    // Use REAL TIME for preview (works during pause)
                     var previewElapsed = (float)(DateTime.Now - previewStartTime).TotalSeconds;
                     
                     // Log every 5 seconds during preview
@@ -213,7 +304,7 @@ namespace SolWorldMod
                     var combatElapsed = Find.TickManager.TicksGame - combatStartTick;
                     if (combatElapsed >= COMBAT_TICKS)
                     {
-                        EndRound("Time limit reached (4 minutes)");
+                        EndRound("Time limit reached (90 seconds)");
                     }
                     else if (currentRoster != null && (currentRoster.RedAlive == 0 || currentRoster.BlueAlive == 0))
                     {
@@ -310,7 +401,7 @@ namespace SolWorldMod
             
             isActive = true;
             
-            // Start first round immediately instead of waiting
+            // Start first round immediately
             Log.Message("SolWorld: Arena activated - STARTING FIRST ROUND IMMEDIATELY!");
             nextRoundTick = Find.TickManager.TicksGame + 60; // Start in 1 second
             
@@ -385,7 +476,7 @@ namespace SolWorldMod
                 Log.Message("SolWorld: Creating roster...");
                 CreateRoster();
                 
-                // Step 2: Get or create proper factions
+                // Step 2: Set up factions
                 Log.Message("SolWorld: Setting up arena factions...");
                 SetupArenaFactions();
                 
@@ -397,7 +488,7 @@ namespace SolWorldMod
                     arenaBlueprint.InitializeBlueprint(map, bounds.Value);
                 }
                 
-                // Step 4: Spawn teams with proper factions
+                // Step 4: Spawn teams
                 Log.Message("SolWorld: ===== SPAWNING TEAMS =====");
                 SpawnBothTeams();
                 
@@ -454,8 +545,6 @@ namespace SolWorldMod
         {
             Log.Message("SolWorld: Setting up arena factions using existing hostile/friendly factions");
             
-            // FIXED: Use existing factions to avoid relation errors
-            
             // Find an existing hostile faction for red team
             redTeamFaction = Find.FactionManager.AllFactions
                 .Where(f => f != null && !f.IsPlayer && f.HostileTo(Faction.OfPlayer) && f.def.humanlikeFaction)
@@ -485,7 +574,7 @@ namespace SolWorldMod
             {
                 Log.Message($"SolWorld: Using friendly faction '{blueTeamFaction.Name}' for blue team");
                 
-                // CRITICAL: Make blue team hostile to red team so they fight each other
+                // Make blue team hostile to red team so they fight each other
                 if (redTeamFaction != blueTeamFaction && redTeamFaction != Faction.OfPlayer)
                 {
                     try
@@ -645,8 +734,8 @@ namespace SolWorldMod
         {
             try
             {
-                // Set hair color for team identification using RimWorld 1.6 API
-                if (pawn.story != null && pawn.story.HairColor != null)
+                // Set hair color for team identification
+                if (pawn.story != null)
                 {
                     if (teamColor == TeamColor.Red)
                         pawn.story.HairColor = Color.red;
@@ -654,7 +743,7 @@ namespace SolWorldMod
                         pawn.story.HairColor = Color.blue;
                 }
                 
-                // Force graphics refresh using RimWorld 1.6 API
+                // Force graphics refresh
                 if (pawn.Drawer?.renderer != null)
                 {
                     pawn.Drawer.renderer.SetAllGraphicsDirty();
@@ -791,7 +880,7 @@ namespace SolWorldMod
             Log.Message("SolWorld: ===== TRANSITION TO COMBAT =====");
             Log.Message("SolWorld: ===== ACTIVATING UNPAUSE SYSTEM =====");
             
-            // FIXED: Use persistent unpause system
+            // Use persistent unpause system
             needsUnpause = true;
             unpauseAttempts = 0;
             
@@ -799,46 +888,271 @@ namespace SolWorldMod
             Log.Message("SolWorld: Unpause system activated - will attempt unpause every tick");
         }
         
-        private void InitiateNaturalCombat()
+        private void InitiateAggressiveCombat()
         {
-            Log.Message("SolWorld: ===== INITIATING NATURAL COMBAT =====");
+            Log.Message("SolWorld: ===== INITIATING AGGRESSIVE COMBAT =====");
             
             combatInitiated = true;
-            lastCombatEnforcementTick = Find.TickManager.TicksGame + 180; // Start enforcement in 3 seconds
+            lastCombatEnforcementTick = Find.TickManager.TicksGame;
             
-            // Since pawns are in hostile factions, they should naturally engage
-            // Just set them up for optimal combat without forcing specific targets
-            foreach (var pawn in redTeamPawns.Concat(blueTeamPawns))
+            // Make teams TRULY hostile to each other
+            SetupProperFactionHostility();
+            
+            // Force immediate combat engagement
+            foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true && !p.Dead))
             {
-                if (pawn?.Spawned == true && !pawn.Dead)
+                SetupAggressiveCombatant(redPawn, TeamColor.Red);
+            }
+            
+            foreach (var bluePawn in blueTeamPawns.Where(p => p?.Spawned == true && !p.Dead))
+            {
+                SetupAggressiveCombatant(bluePawn, TeamColor.Blue);
+            }
+            
+            // Force initial attack orders
+            ForceInitialCombatEngagement();
+            
+            Log.Message("SolWorld: ===== AGGRESSIVE COMBAT INITIATION COMPLETE =====");
+        }
+        
+        private void SetupProperFactionHostility()
+        {
+            Log.Message("SolWorld: Setting up AGGRESSIVE faction hostility...");
+            
+            // Make sure red and blue factions are DEFINITELY hostile
+            if (redTeamFaction != null && blueTeamFaction != null && redTeamFaction != blueTeamFaction)
+            {
+                try
                 {
-                    SetupPawnForNaturalCombat(pawn);
+                    // Force mutual hostility
+                    var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, true);
+                    if (blueToRed != null)
+                    {
+                        blueToRed.baseGoodwill = -100;
+                        blueToRed.kind = FactionRelationKind.Hostile;
+                    }
+                    
+                    var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, true);
+                    if (redToBlue != null)
+                    {
+                        redToBlue.baseGoodwill = -100;
+                        redToBlue.kind = FactionRelationKind.Hostile;
+                    }
+                    
+                    Log.Message($"SolWorld: Forced hostility between {redTeamFaction.Name} and {blueTeamFaction.Name}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to force faction hostility: {ex.Message}");
                 }
             }
             
-            Log.Message("SolWorld: ===== NATURAL COMBAT INITIATION COMPLETE =====");
+            // Manually set pawn hostilities if faction hostility fails
+            foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true))
+            {
+                foreach (var bluePawn in blueTeamPawns.Where(p => p?.Spawned == true))
+                {
+                    try
+                    {
+                        // Force them to see each other as enemies
+                        if (redPawn.mindState != null && redPawn.mindState.enemyTarget != bluePawn)
+                        {
+                            redPawn.mindState.enemyTarget = bluePawn;
+                            redPawn.mindState.lastEngageTargetTick = Find.TickManager.TicksGame;
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
         
-        private void SetupPawnForNaturalCombat(Pawn pawn)
+        private void SetupAggressiveCombatant(Pawn pawn, TeamColor team)
         {
-            var team = pawnTeamMap.TryGetValue(pawn, out var teamColor) ? teamColor : TeamColor.Red;
+            Log.Message($"SolWorld: Setting up AGGRESSIVE combatant {pawn.Name} ({team})");
             
-            Log.Message($"SolWorld: Setting up {pawn.Name} ({team}) for natural combat");
-            
-            // Basic combat readiness - let faction hostility handle targeting
+            // Make them fearless and aggressive
             if (pawn.mindState != null)
             {
                 pawn.mindState.canFleeIndividual = false;
+                // DON'T set mentalBreaker to null - it causes NullReferenceException
+                
+                // Force aggressive duty
                 pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
             }
             
-            // Ensure good combat state
-            if (pawn.needs?.mood != null)
+            // Max out their combat readiness
+            if (pawn.needs != null)
             {
-                pawn.needs.mood.CurLevel = 1.0f;
+                if (pawn.needs.mood != null) pawn.needs.mood.CurLevel = 1.0f;
+                if (pawn.needs.rest != null) pawn.needs.rest.CurLevel = 1.0f;
+                if (pawn.needs.food != null) pawn.needs.food.CurLevel = 1.0f;
             }
             
-            // Don't force specific jobs - let natural faction hostility work
+            // Boost their health and combat stats
+            if (pawn.health?.hediffSet != null)
+            {
+                // Remove any incapacitating hediffs - FIXED nullable bool issue
+                var badHediffs = pawn.health.hediffSet.hediffs
+                    .Where(h => h.def.makesSickThought || h.def.tendable || (h.CurStage?.capMods != null && h.CurStage.capMods.Any()))
+                    .ToList();
+                
+                foreach (var hediff in badHediffs)
+                {
+                    try
+                    {
+                        pawn.health.RemoveHediff(hediff);
+                    }
+                    catch { }
+                }
+            }
+            
+            // Force combat skills to max
+            if (pawn.skills != null)
+            {
+                var shooting = pawn.skills.GetSkill(SkillDefOf.Shooting);
+                var melee = pawn.skills.GetSkill(SkillDefOf.Melee);
+                
+                if (shooting != null)
+                {
+                    shooting.Level = 20;
+                    shooting.passion = Passion.Major;
+                }
+                
+                if (melee != null)
+                {
+                    melee.Level = 20;
+                    melee.passion = Passion.Major;
+                }
+            }
+        }
+        
+        private void ForceInitialCombatEngagement()
+        {
+            Log.Message("SolWorld: FORCING initial combat engagement...");
+            
+            var alivePawns = redTeamPawns.Concat(blueTeamPawns)
+                .Where(p => p?.Spawned == true && !p.Dead)
+                .ToList();
+            
+            if (alivePawns.Count < 2)
+            {
+                Log.Warning("SolWorld: Not enough pawns for combat engagement");
+                return;
+            }
+            
+            // Force red team to attack blue team
+            foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true && !p.Dead))
+            {
+                var nearestBlue = blueTeamPawns
+                    .Where(p => p?.Spawned == true && !p.Dead)
+                    .OrderBy(p => redPawn.Position.DistanceTo(p.Position))
+                    .FirstOrDefault();
+                
+                if (nearestBlue != null)
+                {
+                    ForceAttackTarget(redPawn, nearestBlue);
+                }
+            }
+            
+            // Force blue team to attack red team
+            foreach (var bluePawn in blueTeamPawns.Where(p => p?.Spawned == true && !p.Dead))
+            {
+                var nearestRed = redTeamPawns
+                    .Where(p => p?.Spawned == true && !p.Dead)
+                    .OrderBy(p => bluePawn.Position.DistanceTo(p.Position))
+                    .FirstOrDefault();
+                
+                if (nearestRed != null)
+                {
+                    ForceAttackTarget(bluePawn, nearestRed);
+                }
+            }
+            
+            Log.Message("SolWorld: Initial combat engagement orders issued");
+        }
+        
+        private void ForceAttackTarget(Pawn attacker, Pawn target)
+        {
+            try
+            {
+                Log.Message($"SolWorld: Forcing {attacker.Name} to attack {target.Name}");
+                
+                // Clear current job forcefully
+                if (attacker.jobs != null)
+                {
+                    attacker.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                    attacker.jobs.ClearQueuedJobs();
+                }
+                
+                // Set enemy target directly
+                if (attacker.mindState != null)
+                {
+                    attacker.mindState.enemyTarget = target;
+                    attacker.mindState.lastEngageTargetTick = Find.TickManager.TicksGame;
+                }
+                
+                // Create appropriate attack job
+                Job attackJob = null;
+                
+                // Check if they have a ranged weapon
+                if (attacker.equipment?.Primary != null && attacker.equipment.Primary.def.IsRangedWeapon)
+                {
+                    // Ranged attack - but first move closer if too far
+                    var distance = attacker.Position.DistanceTo(target.Position);
+                    if (distance > attacker.equipment.Primary.def.Verbs[0].range * 0.8f)
+                    {
+                        // Move closer first
+                        var moveToPos = CellFinder.RandomClosewalkCellNear(target.Position, attacker.Map, 3);
+                        if (moveToPos.IsValid)
+                        {
+                            attackJob = JobMaker.MakeJob(JobDefOf.Goto, moveToPos);
+                        }
+                    }
+                    else
+                    {
+                        attackJob = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
+                        attackJob.maxNumStaticAttacks = 999;
+                    }
+                }
+                else
+                {
+                    // Melee attack - move to target
+                    attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+                }
+                
+                // If no attack job was created, force a goto
+                if (attackJob == null)
+                {
+                    var movePos = CellFinder.RandomClosewalkCellNear(target.Position, attacker.Map, 2);
+                    if (movePos.IsValid)
+                    {
+                        attackJob = JobMaker.MakeJob(JobDefOf.Goto, movePos);
+                    }
+                }
+                
+                if (attackJob != null)
+                {
+                    attackJob.playerForced = true;
+                    attackJob.canBashDoors = true;
+                    attackJob.canBashFences = true;
+                    attackJob.locomotionUrgency = LocomotionUrgency.Sprint;
+                    attackJob.checkOverrideOnExpire = false;
+                    attackJob.expiryInterval = 999999; // Don't let it expire
+                    
+                    // Force start the job
+                    attacker.jobs.StartJob(attackJob, JobCondition.InterruptForced, null, false, true);
+                    
+                    Log.Message($"SolWorld: {attackJob.def.defName} job started - {attacker.Name} -> {target.Name}");
+                }
+                else
+                {
+                    Log.Warning($"SolWorld: Could not create attack job for {attacker.Name} -> {target.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to force attack {attacker.Name} -> {target.Name}: {ex.Message}");
+            }
         }
         
         private void EnforceContinuousCombat()
@@ -849,64 +1163,144 @@ namespace SolWorldMod
             var currentTick = Find.TickManager.TicksGame;
             var bounds = GetArenaBounds();
             
-            // Light enforcement - mainly just keep pawns in bounds and maintain combat readiness
-            var allAlivePawns = redTeamPawns.Concat(blueTeamPawns)
-                .Where(p => p?.Spawned == true && !p.Dead)
-                .ToList();
+            var redAlive = redTeamPawns.Where(p => p?.Spawned == true && !p.Dead).ToList();
+            var blueAlive = blueTeamPawns.Where(p => p?.Spawned == true && !p.Dead).ToList();
             
-            if (allAlivePawns.Count == 0)
+            if (redAlive.Count == 0 && blueAlive.Count == 0)
             {
                 Log.Warning("SolWorld: No alive pawns found in combat!");
                 return;
             }
             
-            foreach (var pawn in allAlivePawns)
+            // AGGRESSIVE ENFORCEMENT: Force combat every 3 seconds
+            foreach (var redPawn in redAlive)
             {
-                if (!pawnTeamMap.ContainsKey(pawn))
-                    continue;
-                    
-                var team = pawnTeamMap[pawn];
+                EnforceAggressiveCombat(redPawn, blueAlive, bounds);
+            }
+            
+            foreach (var bluePawn in blueAlive)
+            {
+                EnforceAggressiveCombat(bluePawn, redAlive, bounds);
+            }
+            
+            // Log combat status every 10 seconds
+            if (currentTick % 600 == 0)
+            {
+                Log.Message($"SolWorld: Combat enforcement - Red: {redAlive.Count} alive, Blue: {blueAlive.Count} alive");
                 
-                // Maintain basic combat state
-                if (pawn.mindState != null)
+                // Debug: Show what pawns are doing
+                foreach (var pawn in redAlive.Take(3))
                 {
-                    pawn.mindState.canFleeIndividual = false;
-                    if (pawn.mindState.duty?.def != DutyDefOf.AssaultColony)
+                    var jobName = pawn.CurJob?.def?.defName ?? "No Job";
+                    var targetName = "No Target";
+                    if (pawn.CurJob != null && pawn.CurJob.targetA.IsValid && pawn.CurJob.targetA.Thing != null)
                     {
-                        pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+                        targetName = pawn.CurJob.targetA.Thing.LabelShort;
                     }
+                    Log.Message($"  Red {pawn.Name}: Job={jobName}, Target={targetName}");
                 }
+                
+                foreach (var pawn in blueAlive.Take(3))
+                {
+                    var jobName = pawn.CurJob?.def?.defName ?? "No Job";
+                    var targetName = "No Target";
+                    if (pawn.CurJob != null && pawn.CurJob.targetA.IsValid && pawn.CurJob.targetA.Thing != null)
+                    {
+                        targetName = pawn.CurJob.targetA.Thing.LabelShort;
+                    }
+                    Log.Message($"  Blue {pawn.Name}: Job={jobName}, Target={targetName}");
+                }
+            }
+        }
+        
+        private void EnforceAggressiveCombat(Pawn pawn, List<Pawn> enemies, CellRect? bounds)
+        {
+            if (pawn?.jobs == null || enemies.Count == 0)
+                return;
+            
+            // Keep in arena bounds
+            if (bounds.HasValue && !bounds.Value.Contains(pawn.Position))
+            {
+                ForceBackToArena(pawn, bounds.Value);
+                return;
+            }
+            
+            // Maintain combat state
+            if (pawn.mindState != null)
+            {
+                pawn.mindState.canFleeIndividual = false;
                 
                 // Keep mood high
                 if (pawn.needs?.mood != null && pawn.needs.mood.CurLevel < 0.5f)
                 {
                     pawn.needs.mood.CurLevel = 1.0f;
                 }
-                
-                // Keep in arena bounds
-                if (bounds.HasValue && !bounds.Value.Contains(pawn.Position))
-                {
-                    ForceBackToArena(pawn, bounds.Value);
-                }
             }
             
-            // Log combat status every 10 seconds
-            if (currentTick % 600 == 0)
+            // Check if they're actually fighting - FIXED nullable bool issue
+            var currentJob = pawn.CurJob;
+            bool isAttacking = currentJob != null && 
+                (currentJob.def == JobDefOf.AttackMelee || 
+                 currentJob.def == JobDefOf.AttackStatic || 
+                 currentJob.def == JobDefOf.Hunt);
+            
+            bool hasValidTarget = false;
+            if (currentJob != null && currentJob.targetA.IsValid && currentJob.targetA.Thing is Pawn targetPawn)
             {
-                var redAlive = redTeamPawns.Count(p => p?.Spawned == true && !p.Dead);
-                var blueAlive = blueTeamPawns.Count(p => p?.Spawned == true && !p.Dead);
-                Log.Message($"SolWorld: Combat status - Red: {redAlive} alive, Blue: {blueAlive} alive");
+                hasValidTarget = enemies.Contains(targetPawn) && !targetPawn.Dead;
+            }
+            
+            // Force new attack if not currently attacking or target is invalid
+            if (!isAttacking || !hasValidTarget)
+            {
+                var nearestEnemy = enemies
+                    .Where(e => !e.Dead && e.Spawned)
+                    .OrderBy(e => pawn.Position.DistanceTo(e.Position))
+                    .FirstOrDefault();
                 
-                // Check faction hostilities
-                if (redTeamPawns.Count > 0 && blueTeamPawns.Count > 0)
+                if (nearestEnemy != null)
                 {
-                    var redPawn = redTeamPawns.FirstOrDefault(p => p?.Spawned == true);
-                    var bluePawn = blueTeamPawns.FirstOrDefault(p => p?.Spawned == true);
-                    if (redPawn != null && bluePawn != null)
+                    // Only force new attack if distance is reasonable (within arena)
+                    var distance = pawn.Position.DistanceTo(nearestEnemy.Position);
+                    if (distance <= 50) // Reasonable arena size
                     {
-                        Log.Message($"SolWorld: Faction hostility check - Red hostile to Blue: {redPawn.HostileTo(bluePawn)}");
+                        ForceAttackTarget(pawn, nearestEnemy);
+                    }
+                    else
+                    {
+                        // If too far, force them to move toward enemy spawn
+                        var enemyTeam = enemies == redTeamPawns ? TeamColor.Red : TeamColor.Blue;
+                        var enemySpawner = enemyTeam == TeamColor.Red ? redSpawner : blueSpawner;
+                        
+                        if (enemySpawner != null)
+                        {
+                            ForceMoveToward(pawn, enemySpawner.Position);
+                        }
                     }
                 }
+            }
+        }
+        
+        private void ForceMoveToward(Pawn pawn, IntVec3 targetPos)
+        {
+            try
+            {
+                if (pawn.jobs != null)
+                {
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                    
+                    var moveJob = JobMaker.MakeJob(JobDefOf.Goto, targetPos);
+                    moveJob.playerForced = true;
+                    moveJob.locomotionUrgency = LocomotionUrgency.Sprint;
+                    
+                    pawn.jobs.StartJob(moveJob, JobCondition.InterruptForced);
+                    
+                    Log.Message($"SolWorld: Forcing {pawn.Name} to move toward {targetPos}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to force movement for {pawn.Name}: {ex.Message}");
             }
         }
         
@@ -1156,7 +1550,7 @@ namespace SolWorldMod
             SpawnBothTeams();
             
             // Force immediate combat
-            InitiateNaturalCombat();
+            InitiateAggressiveCombat();
             
             // Set combat state
             currentState = ArenaState.Combat;
@@ -1203,14 +1597,67 @@ namespace SolWorldMod
         {
             Log.Message("SolWorld: MANUAL FORCE UNPAUSE called!");
             
-            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-            
-            if (Find.TickManager.Paused)
+            try
             {
-                Find.TickManager.TogglePaused();
+                // Try every possible method to unpause
+                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+                
+                if (Find.TickManager.Paused)
+                {
+                    Find.TickManager.TogglePaused();
+                }
+                
+                // Reflection attempt
+                try
+                {
+                    var tickManagerType = typeof(TickManager);
+                    var pausedField = tickManagerType.GetField("paused", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (pausedField != null)
+                    {
+                        pausedField.SetValue(Find.TickManager, false);
+                    }
+                }
+                catch { }
+                
+                Log.Message($"SolWorld: Manual unpause result - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
+                
+                // If we're in preview mode and manual unpause, start combat immediately
+                if (currentState == ArenaState.Preview && currentRoster != null)
+                {
+                    TransitionToCombat();
+                    Messages.Message("Manual unpause - starting combat immediately!", MessageTypeDefOf.PositiveEvent);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Manual unpause failed: {ex.Message}");
+            }
+        }
+        
+        // Add a simpler combat test method
+        public void TestCombatMovement()
+        {
+            if (currentRoster == null || redTeamPawns.Count == 0 || blueTeamPawns.Count == 0)
+            {
+                Log.Warning("SolWorld: No teams to test combat movement");
+                return;
             }
             
-            Log.Message($"SolWorld: Manual unpause result - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
+            Log.Message("SolWorld: Testing combat movement...");
+            
+            // Force every red pawn to move toward blue spawn
+            foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true))
+            {
+                ForceMoveToward(redPawn, blueSpawner.Position);
+            }
+            
+            // Force every blue pawn to move toward red spawn  
+            foreach (var bluePawn in blueTeamPawns.Where(p => p?.Spawned == true))
+            {
+                ForceMoveToward(bluePawn, redSpawner.Position);
+            }
+            
+            Messages.Message("Combat movement test initiated - pawns should move!", MessageTypeDefOf.PositiveEvent);
         }
     }
 }
