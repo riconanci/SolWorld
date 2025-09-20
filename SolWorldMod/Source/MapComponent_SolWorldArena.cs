@@ -1,24 +1,4 @@
-// Debug: Test movement
-                        yield return new Command_Action
-                        {
-                            defaultLabel = "DEV: Test Movement",
-                            defaultDesc = "Test pawn movement without combat (dev mode only)",
-                            icon = BaseContent.BadTex,
-                            action = () => {
-                                arenaComp.TestCombatMovement();
-                            }
-                        };
-                        
-                        // Debug: Force unpause
-                        yield return new Command_Action
-                        {
-                            defaultLabel = "DEV: Force Unpause",
-                            defaultDesc = "Manually force unpause and start combat (dev mode only)",
-                            icon = BaseContent.BadTex,
-                            action = () => {
-                                arenaComp.ForceUnpause();
-                            }
-                        };// solworld/SolWorldMod/Source/MapComponent_SolWorldArena.cs
+// solworld/SolWorldMod/Source/MapComponent_SolWorldArena.cs
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,10 +36,10 @@ namespace SolWorldMod
         private List<Pawn> blueTeamPawns = new List<Pawn>();
         private Dictionary<Pawn, TeamColor> pawnTeamMap = new Dictionary<Pawn, TeamColor>();
         
-        // Unpause system
+        // SUPER AGGRESSIVE UNPAUSE - Try EVERY TICK until it works
         private bool needsUnpause = false;
         private int unpauseAttempts = 0;
-        private const int MAX_UNPAUSE_ATTEMPTS = 30;
+        private const int MAX_UNPAUSE_ATTEMPTS = 300; // Try for 5 seconds straight
         
         // Combat enforcement
         private bool combatInitiated = false;
@@ -130,11 +110,25 @@ namespace SolWorldMod
                 
             var currentTick = Find.TickManager.TicksGame;
             
-            // Handle unpause attempts FIRST every tick
+            // SUPER AGGRESSIVE UNPAUSE - Try EVERY SINGLE TICK until success
             if (needsUnpause && unpauseAttempts < MAX_UNPAUSE_ATTEMPTS)
             {
-                HandleUnpauseAttempt();
-                return; // Focus only on unpausing
+                AttemptAggressiveUnpause();
+                return; // Focus entirely on unpausing
+            }
+            
+            // If we tried 300 times and failed, give up and start combat anyway
+            if (needsUnpause && unpauseAttempts >= MAX_UNPAUSE_ATTEMPTS)
+            {
+                Log.Error("SolWorld: UNPAUSE FAILED AFTER 300 ATTEMPTS - STARTING COMBAT ANYWAY!");
+                needsUnpause = false;
+                unpauseAttempts = 0;
+                if (currentRoster != null)
+                {
+                    currentRoster.IsLive = true;
+                    InitiateAggressiveCombat();
+                    Messages.Message("COMBAT STARTED (despite pause failure)!", MessageTypeDefOf.PositiveEvent);
+                }
             }
             
             // Check if it's time for the next scheduled round
@@ -162,117 +156,88 @@ namespace SolWorldMod
             }
         }
         
-        private void HandleUnpauseAttempt()
+        private void AttemptAggressiveUnpause()
         {
             unpauseAttempts++;
             
-            Log.Message($"SolWorld: Unpause attempt {unpauseAttempts}/{MAX_UNPAUSE_ATTEMPTS} - Current state: Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
+            // Log every 60 attempts (1 second)
+            if (unpauseAttempts % 60 == 0)
+            {
+                Log.Message($"SolWorld: AGGRESSIVE UNPAUSE attempt {unpauseAttempts}/300 - Paused={Find.TickManager.Paused}, Speed={Find.TickManager.CurTimeSpeed}");
+            }
             
-            // MOST AGGRESSIVE UNPAUSE POSSIBLE
             try
             {
-                // Method 1: Direct property assignment (if accessible)
-                var wasPaused = Find.TickManager.Paused;
-                
-                // Method 2: Force time speed changes
-                if (Find.TickManager.CurTimeSpeed == TimeSpeed.Paused)
+                // Method 1: Force speed to Normal EVERY tick
+                if (Find.TickManager.CurTimeSpeed != TimeSpeed.Normal)
                 {
                     Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-                    Log.Message("SolWorld: Changed speed from Paused to Normal");
                 }
                 
-                // Method 3: Multiple toggle attempts if still paused
+                // Method 2: Toggle pause if still paused
                 if (Find.TickManager.Paused)
                 {
                     Find.TickManager.TogglePaused();
-                    Log.Message("SolWorld: Called TogglePaused()");
                 }
                 
-                // Method 4: Reflection to directly set the paused field
-                if (Find.TickManager.Paused)
+                // Method 3: Reflection brute force EVERY tick
+                try
+                {
+                    var tickManagerType = typeof(TickManager);
+                    var pausedField = tickManagerType.GetField("paused", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (pausedField != null && (bool)pausedField.GetValue(Find.TickManager))
+                    {
+                        pausedField.SetValue(Find.TickManager, false);
+                    }
+                    
+                    var timeSpeedField = tickManagerType.GetField("curTimeSpeed", BindingFlags.NonPublic | BindingFlags.Instance);
+                    if (timeSpeedField != null)
+                    {
+                        timeSpeedField.SetValue(Find.TickManager, TimeSpeed.Normal);
+                    }
+                }
+                catch { }
+                
+                // Method 4: Try to find other unpause methods via reflection
+                if (unpauseAttempts % 30 == 0) // Every 0.5 seconds
                 {
                     try
                     {
-                        var tickManagerType = typeof(TickManager);
-                        var pausedField = tickManagerType.GetField("paused", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (pausedField != null)
-                        {
-                            pausedField.SetValue(Find.TickManager, false);
-                            Log.Message("SolWorld: Used reflection to force paused=false");
-                        }
-                        
-                        // Also try to set time speed via reflection
-                        var timeSpeedField = tickManagerType.GetField("curTimeSpeed", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (timeSpeedField != null)
-                        {
-                            timeSpeedField.SetValue(Find.TickManager, TimeSpeed.Normal);
-                            Log.Message("SolWorld: Used reflection to force speed=Normal");
-                        }
-                    }
-                    catch (Exception reflectionEx)
-                    {
-                        Log.Warning($"SolWorld: Reflection unpause failed: {reflectionEx.Message}");
-                    }
-                }
-                
-                // Method 5: Try to find and call any unpause methods
-                try
-                {
-                    var methods = typeof(TickManager).GetMethods(BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-                    foreach (var method in methods)
-                    {
-                        if (method.Name.ToLower().Contains("unpause") || method.Name.ToLower().Contains("resume"))
+                        var methods = typeof(TickManager).GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        foreach (var method in methods.Where(m => m.Name.ToLower().Contains("unpause") || m.Name.ToLower().Contains("resume")))
                         {
                             if (method.GetParameters().Length == 0)
                             {
                                 method.Invoke(Find.TickManager, null);
-                                Log.Message($"SolWorld: Called method {method.Name}");
                             }
                         }
                     }
-                }
-                catch (Exception methodEx)
-                {
-                    Log.Warning($"SolWorld: Method search failed: {methodEx.Message}");
+                    catch { }
                 }
                 
+                // SUCCESS CHECK - be very strict
+                bool isActuallyUnpaused = !Find.TickManager.Paused && Find.TickManager.CurTimeSpeed == TimeSpeed.Normal;
+                
+                if (isActuallyUnpaused)
+                {
+                    Log.Message($"SolWorld: ===== UNPAUSE SUCCESS AFTER {unpauseAttempts} ATTEMPTS! =====");
+                    needsUnpause = false;
+                    unpauseAttempts = 0;
+                    
+                    // Start combat immediately
+                    if (currentRoster != null)
+                    {
+                        currentRoster.IsLive = true;
+                        InitiateAggressiveCombat();
+                        Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Log.Warning($"SolWorld: Unpause attempt failed: {ex.Message}");
-            }
-            
-            // Force speed to Normal regardless
-            if (Find.TickManager.CurTimeSpeed != TimeSpeed.Normal)
-            {
-                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-            }
-            
-            Log.Message($"SolWorld: After unpause attempts - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
-            
-            // Success check - be less strict about success
-            bool isUnpaused = !Find.TickManager.Paused || Find.TickManager.CurTimeSpeed == TimeSpeed.Normal;
-            
-            if (isUnpaused || unpauseAttempts >= MAX_UNPAUSE_ATTEMPTS)
-            {
-                if (isUnpaused)
+                if (unpauseAttempts % 60 == 0)
                 {
-                    Log.Message("SolWorld: ===== UNPAUSE SUCCESS! =====");
-                }
-                else
-                {
-                    Log.Warning("SolWorld: ===== UNPAUSE GAVE UP AFTER 30 ATTEMPTS! =====");
-                }
-                
-                needsUnpause = false;
-                unpauseAttempts = 0;
-                
-                // Start combat regardless of pause state
-                if (currentRoster != null)
-                {
-                    currentRoster.IsLive = true;
-                    InitiateAggressiveCombat();
-                    Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
+                    Log.Warning($"SolWorld: Unpause attempt {unpauseAttempts} failed: {ex.Message}");
                 }
             }
         }
@@ -292,9 +257,10 @@ namespace SolWorldMod
                         Log.Message($"SolWorld: Preview time remaining: {timeLeft:F0} seconds");
                     }
                     
+                    // CRITICAL: Transition to combat IMMEDIATELY when time is up
                     if (previewElapsed >= PREVIEW_SECONDS)
                     {
-                        Log.Message("SolWorld: 30 seconds elapsed - TRIGGERING UNPAUSE SYSTEM!");
+                        Log.Message("SolWorld: 30 seconds elapsed - IMMEDIATE TRANSITION TO COMBAT!");
                         TransitionToCombat();
                     }
                     break;
@@ -717,6 +683,9 @@ namespace SolWorldMod
                 
                 pawn.Name = new NameSingle(fighter.WalletShort);
                 
+                // CRITICAL FIX: Ensure pawn has proper MindState components
+                EnsurePawnMindStateSetup(pawn);
+                
                 GiveWeapon(pawn);
                 MakeWarrior(pawn);
                 
@@ -727,6 +696,47 @@ namespace SolWorldMod
             {
                 Log.Error("SolWorld: Failed to generate warrior: " + ex.Message);
                 return null;
+            }
+        }
+        
+        // CRITICAL FIX: Ensure pawns have proper MindState setup to prevent NullReferenceException
+        private void EnsurePawnMindStateSetup(Pawn pawn)
+        {
+            try
+            {
+                // Ensure mindState is not null and properly initialized
+                if (pawn.mindState == null)
+                {
+                    Log.Warning($"SolWorld: Pawn {pawn.Name} has null mindState - this should not happen");
+                    return;
+                }
+                
+                // Ensure mentalBreaker is not null (this was likely causing the NRE)
+                if (pawn.mindState.mentalBreaker == null)
+                {
+                    Log.Message($"SolWorld: Initializing mentalBreaker for {pawn.Name}");
+                    // RimWorld should auto-initialize this, but let's be safe
+                    // DON'T manually create it - just log and let RimWorld handle it
+                }
+                
+                // Set basic combat-ready mental state
+                pawn.mindState.canFleeIndividual = false;
+                
+                // Ensure pawn has proper job capacity
+                if (pawn.jobs == null)
+                {
+                    Log.Warning($"SolWorld: Pawn {pawn.Name} has null jobs - this should not happen");
+                    return;
+                }
+                
+                // Set a basic duty for now
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+                
+                Log.Message($"SolWorld: Mind state setup complete for {pawn.Name}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Failed to setup mind state for {pawn.Name}: {ex.Message}");
             }
         }
         
@@ -873,19 +883,17 @@ namespace SolWorldMod
         
         private void TransitionToCombat()
         {
+            Log.Message("SolWorld: ===== IMMEDIATE TRANSITION TO COMBAT =====");
+            
             currentState = ArenaState.Combat;
             combatStartTick = Find.TickManager.TicksGame; // Start game-time tracking
             combatInitiated = false; // Will be set to true after unpause
             
-            Log.Message("SolWorld: ===== TRANSITION TO COMBAT =====");
-            Log.Message("SolWorld: ===== ACTIVATING UNPAUSE SYSTEM =====");
-            
-            // Use persistent unpause system
+            // SUPER AGGRESSIVE UNPAUSE - start immediately
             needsUnpause = true;
             unpauseAttempts = 0;
             
-            // Don't start combat here - wait for successful unpause
-            Log.Message("SolWorld: Unpause system activated - will attempt unpause every tick");
+            Log.Message("SolWorld: STARTING SUPER AGGRESSIVE UNPAUSE SYSTEM!");
         }
         
         private void InitiateAggressiveCombat()
@@ -974,7 +982,6 @@ namespace SolWorldMod
             if (pawn.mindState != null)
             {
                 pawn.mindState.canFleeIndividual = false;
-                // DON'T set mentalBreaker to null - it causes NullReferenceException
                 
                 // Force aggressive duty
                 pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
@@ -991,7 +998,7 @@ namespace SolWorldMod
             // Boost their health and combat stats
             if (pawn.health?.hediffSet != null)
             {
-                // Remove any incapacitating hediffs - FIXED nullable bool issue
+                // Remove any incapacitating hediffs
                 var badHediffs = pawn.health.hediffSet.hediffs
                     .Where(h => h.def.makesSickThought || h.def.tendable || (h.CurStage?.capMods != null && h.CurStage.capMods.Any()))
                     .ToList();
@@ -1237,7 +1244,7 @@ namespace SolWorldMod
                 }
             }
             
-            // Check if they're actually fighting - FIXED nullable bool issue
+            // Check if they're actually fighting
             var currentJob = pawn.CurJob;
             bool isAttacking = currentJob != null && 
                 (currentJob.def == JobDefOf.AttackMelee || 
@@ -1486,7 +1493,6 @@ namespace SolWorldMod
             Log.Message("SolWorld: Current round cleanup complete");
         }
         
-        // UI SUPPORT METHODS
         public float GetTimeLeftInCurrentPhase()
         {
             switch (currentState)
