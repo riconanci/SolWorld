@@ -92,13 +92,13 @@ namespace SolWorldMod
                             }
                         };
                         
-                        // CRITICAL: Manual Unpause button for debugging the stuck pause issue
+                        // Manual unpause for emergency situations only
                         if (arenaComp.CurrentState == ArenaState.Preview)
                         {
                             yield return new Command_Action
                             {
-                                defaultLabel = "MANUAL UNPAUSE",
-                                defaultDesc = "Force unpause the game (debug button for stuck preview)",
+                                defaultLabel = "Manual Unpause",
+                                defaultDesc = "Emergency manual unpause if automatic transition fails",
                                 icon = BaseContent.BadTex,
                                 action = () => {
                                     arenaComp.ForceUnpause();

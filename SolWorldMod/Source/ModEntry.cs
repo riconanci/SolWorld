@@ -11,6 +11,10 @@ namespace SolWorldMod
         public SolWorldMod(ModContentPack content) : base(content)
         {
             Settings = GetSettings<SolWorldSettings>();
+            
+            // Initialize UI drawer for scoreboard
+            SimpleUIDrawer.Initialize();
+            Log.Message("SolWorld: Mod initialized with UI drawer");
         }
 
         public override void DoSettingsWindowContents(Rect inRect)
