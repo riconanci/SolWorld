@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using Verse;
+using Verse.AI;
 using RimWorld;
 
 namespace SolWorldMod
@@ -20,37 +21,26 @@ namespace SolWorldMod
         private RoundRoster currentRoster;
         private int nextRoundTick = -1;
         
-        // REAL-TIME COUNTDOWN SYSTEM (works during pause)
-        private DateTime phaseStartTime;
-        private float previewDurationSeconds = 30f;
-        private float combatDurationSeconds = 240f;
+        // UPDATED TIMING: 30s preview + 90s combat = 2min rounds, 3min cadence
+        private DateTime previewStartTime;
+        private int combatStartTick;
+        private const float PREVIEW_SECONDS = 30f; // Real-time during pause
+        private const int COMBAT_TICKS = 90 * 60; // 1.5 minutes (90 seconds) game time
+        private const int CADENCE_TICKS = 180 * 60; // 3 minutes between rounds
         
         // Team factions
         private Faction redTeamFaction;
         private Faction blueTeamFaction;
         
-        public ArenaState CurrentState 
-        { 
-            get { return currentState; } 
-            private set { currentState = value; } 
-        }
-        
-        public bool IsActive 
-        { 
-            get { return isActive; } 
-            private set { isActive = value; } 
-        }
-        
-        public RoundRoster CurrentRoster 
-        { 
-            get { return currentRoster; } 
-            private set { currentRoster = value; } 
-        }
-        
         // Components
         private ArenaBounds arenaBounds;
         private ArenaBlueprint arenaBlueprint;
         private ArenaReset arenaReset;
+        
+        // Accessors
+        public ArenaState CurrentState => currentState;
+        public bool IsActive => isActive;
+        public RoundRoster CurrentRoster => currentRoster;
         
         public MapComponent_SolWorldArena(Map map) : base(map)
         {
@@ -68,6 +58,7 @@ namespace SolWorldMod
             Scribe_Values.Look(ref isActive, "isActive", false);
             Scribe_Values.Look(ref currentState, "currentState", ArenaState.Idle);
             Scribe_Values.Look(ref nextRoundTick, "nextRoundTick", -1);
+            Scribe_Values.Look(ref combatStartTick, "combatStartTick", -1);
             Scribe_Deep.Look(ref currentRoster, "currentRoster");
             Scribe_References.Look(ref redTeamFaction, "redTeamFaction");
             Scribe_References.Look(ref blueTeamFaction, "blueTeamFaction");
@@ -82,16 +73,18 @@ namespace SolWorldMod
                 
             var currentTick = Find.TickManager.TicksGame;
             
-            // Check if it's time for the next scheduled round
+            // FIXED: Check if it's time for the next scheduled round
             if (currentState == ArenaState.Idle && nextRoundTick > 0 && currentTick >= nextRoundTick)
             {
-                StartPreviewPhase();
+                Log.Message("SolWorld: TIME TO START NEW ROUND! Current: " + currentTick + ", Next: " + nextRoundTick);
+                StartNewRound();
+                return;
             }
             
-            // Handle phase transitions using REAL-TIME clock (works during pause)
+            // Handle phase transitions
             HandlePhaseTransitions();
             
-            // Force continuous combat during combat phase
+            // CRITICAL: Force continuous combat during combat phase
             if (currentState == ArenaState.Combat && currentTick % 15 == 0) // Every 0.25 seconds
             {
                 EnforceContinuousCombat();
@@ -100,24 +93,24 @@ namespace SolWorldMod
         
         private void HandlePhaseTransitions()
         {
-            if (currentState == ArenaState.Idle) return;
-            
-            var elapsed = (float)(DateTime.Now - phaseStartTime).TotalSeconds;
-            
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    if (elapsed >= previewDurationSeconds)
+                    // Use REAL TIME for preview (works during pause)
+                    var previewElapsed = (float)(DateTime.Now - previewStartTime).TotalSeconds;
+                    if (previewElapsed >= PREVIEW_SECONDS)
                     {
-                        Log.Message("SolWorld: 30 seconds elapsed - AUTO RESUMING GAME!");
+                        Log.Message("SolWorld: 30 seconds elapsed - FORCING UNPAUSE AND COMBAT!");
                         TransitionToCombat();
                     }
                     break;
                     
                 case ArenaState.Combat:
-                    if (elapsed >= combatDurationSeconds)
+                    // Use GAME TIME for combat
+                    var combatElapsed = Find.TickManager.TicksGame - combatStartTick;
+                    if (combatElapsed >= COMBAT_TICKS)
                     {
-                        EndRound("Time limit reached");
+                        EndRound("Time limit reached (90 seconds)");
                     }
                     else if (currentRoster != null && (currentRoster.RedAlive == 0 || currentRoster.BlueAlive == 0))
                     {
@@ -126,14 +119,18 @@ namespace SolWorldMod
                     break;
                     
                 case ArenaState.Ended:
-                    if (elapsed >= 3f)
+                    // Quick transition to reset after 3 seconds
+                    var endElapsed = Find.TickManager.TicksGame - combatStartTick - COMBAT_TICKS;
+                    if (endElapsed >= 180) // 3 seconds
                     {
                         StartResetPhase();
                     }
                     break;
                     
                 case ArenaState.Resetting:
-                    if (elapsed >= 2f)
+                    // Quick reset after 2 seconds, then schedule next round
+                    var resetElapsed = Find.TickManager.TicksGame - combatStartTick - COMBAT_TICKS;
+                    if (resetElapsed >= 300) // 5 seconds total
                     {
                         CompleteReset();
                     }
@@ -209,9 +206,13 @@ namespace SolWorldMod
             }
             
             isActive = true;
-            ScheduleNextRound();
-            Messages.Message("Arena activated. Next round starts soon...", MessageTypeDefOf.PositiveEvent);
-            Log.Message("SolWorld: Arena successfully started");
+            
+            // FIXED: Start first round immediately instead of waiting
+            Log.Message("SolWorld: Arena activated - STARTING FIRST ROUND IMMEDIATELY!");
+            nextRoundTick = Find.TickManager.TicksGame + 60; // Start in 1 second
+            
+            Messages.Message("Arena activated! First round starting immediately...", MessageTypeDefOf.PositiveEvent);
+            Log.Message("SolWorld: Arena successfully started, first round scheduled for tick " + nextRoundTick);
         }
         
         public void StopArena()
@@ -219,6 +220,7 @@ namespace SolWorldMod
             isActive = false;
             currentState = ArenaState.Idle;
             nextRoundTick = -1;
+            combatStartTick = -1;
             
             if (currentRoster != null)
             {
@@ -230,56 +232,74 @@ namespace SolWorldMod
         
         public void ForceNextRound()
         {
-            if (!HasValidSetup) return;
+            if (!HasValidSetup) 
+            {
+                Messages.Message("Cannot force round - invalid setup", MessageTypeDefOf.RejectInput);
+                return;
+            }
+            
+            Log.Message("SolWorld: FORCE NEXT ROUND - STARTING IMMEDIATELY!");
             
             if (currentState != ArenaState.Idle)
             {
                 EndRound("Force triggered");
             }
             
-            nextRoundTick = Find.TickManager.TicksGame + 60;
+            // Start immediately
+            currentState = ArenaState.Idle;
+            nextRoundTick = Find.TickManager.TicksGame + 30; // Start in 0.5 seconds
+            
+            Messages.Message("Force starting round in 0.5 seconds...", MessageTypeDefOf.PositiveEvent);
         }
         
         private void ScheduleNextRound()
         {
             var currentTime = Find.TickManager.TicksGame;
-            var cadenceTicks = SolWorldSettings.CADENCE_SECONDS * 60;
-            var previewTicks = SolWorldSettings.PREVIEW_SECONDS * 60;
+            nextRoundTick = currentTime + CADENCE_TICKS; // 3 minutes from now
             
-            var nextCadenceTick = ((currentTime / cadenceTicks) + 1) * cadenceTicks;
-            nextRoundTick = nextCadenceTick - previewTicks;
-            
-            var timeUntilRound = (nextRoundTick - currentTime) / 60f;
-            Log.Message("SolWorld: Next round in " + timeUntilRound.ToString("F0") + " seconds");
+            var timeUntilRound = CADENCE_TICKS / 60f;
+            Log.Message("SolWorld: Next round scheduled in " + timeUntilRound.ToString("F0") + " seconds (tick " + nextRoundTick + ")");
         }
         
-        private void StartPreviewPhase()
+        private void StartNewRound()
         {
-            currentState = ArenaState.Preview;
-            phaseStartTime = DateTime.Now;
+            Log.Message("SolWorld: STARTING NEW ROUND - SPAWN + PAUSE SIMULTANEOUSLY");
             
-            Log.Message("SolWorld: Starting 30-second preview phase");
+            currentState = ArenaState.Preview;
+            previewStartTime = DateTime.Now; // Real-time tracking for paused preview
             
             try
             {
+                // Step 1: Create roster and factions
                 CreateRoster();
-                SpawnTeamsWithProperHostility();
+                CreateArenaFactions();
                 
+                // Step 2: Initialize blueprint BEFORE spawning
                 var bounds = GetArenaBounds();
                 if (bounds.HasValue)
                 {
                     arenaBlueprint.InitializeBlueprint(map, bounds.Value);
                 }
                 
-                Find.TickManager.Pause();
+                // Step 3: Spawn teams (this happens instantly)
+                SpawnBothTeams();
+                
+                // Step 4: IMMEDIATELY pause after spawning
+                if (!Find.TickManager.Paused)
+                {
+                    Find.TickManager.Pause();
+                    Log.Message("SolWorld: Game paused for 30-second preview");
+                }
                 
                 var payoutText = currentRoster.PerWinnerPayout.ToString("F3");
                 Messages.Message("30-SECOND PREVIEW: Round " + currentRoster.MatchId + " - " + payoutText + " SOL per winner", MessageTypeDefOf.PositiveEvent);
+                
+                Log.Message("SolWorld: Round started successfully - 20 fighters spawned and game paused");
             }
             catch (Exception ex)
             {
-                Log.Error("SolWorld: Error in preview phase: " + ex.Message);
-                EndRound("Preview error");
+                Log.Error("SolWorld: Error starting round: " + ex.Message);
+                EndRound("Start error");
             }
         }
         
@@ -298,6 +318,8 @@ namespace SolWorldMod
                 currentRoster.Red.Add(new Fighter(mockHolders[i], TeamColor.Red));
                 currentRoster.Blue.Add(new Fighter(mockHolders[i + 10], TeamColor.Blue));
             }
+            
+            Log.Message("SolWorld: Created roster with 20 fighters (10 red, 10 blue)");
         }
         
         private string[] GenerateMockHolders()
@@ -310,443 +332,78 @@ namespace SolWorldMod
             return holders;
         }
         
-        private void TransitionToCombat()
+        private void CreateArenaFactions()
         {
-            currentState = ArenaState.Combat;
-            phaseStartTime = DateTime.Now;
+            Log.Message("SolWorld: Creating arena factions with proper hostility");
             
-            Log.Message("SolWorld: FORCING GAME TO RESUME - COMBAT STARTING!");
+            // RED TEAM FACTION (Hostile to player - shows as RED)
+            var pirateDef = DefDatabase<FactionDef>.GetNamed("Pirate");
+            var redParms = new FactionGeneratorParms(pirateDef);
+            redTeamFaction = FactionGenerator.NewGeneratedFaction(redParms);
+            redTeamFaction.Name = "Red Arena Team";
+            redTeamFaction.colorFromSpectrum = 0.0f; // Red color
             
-            // FORCE UNPAUSE
-            if (Find.TickManager.Paused)
-            {
-                Find.TickManager.TogglePaused();
-            }
-            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-            
-            currentRoster.IsLive = true;
-            
-            // IMMEDIATELY start aggressive combat
-            InitiateAggressiveCombat();
-            
-            Messages.Message("COMBAT STARTED! 4 minutes of fighting!", MessageTypeDefOf.PositiveEvent);
-        }
-        
-        private void InitiateAggressiveCombat()
-        {
-            if (currentRoster == null) return;
-            
-            Log.Message("SolWorld: INITIATING AGGRESSIVE COMBAT!");
-            
-            var allFighters = currentRoster.Red.Concat(currentRoster.Blue);
-            
-            foreach (var fighter in allFighters)
-            {
-                if (fighter.PawnRef?.Spawned == true && !fighter.PawnRef.Dead)
-                {
-                    SetupFighterForCombat(fighter.PawnRef, fighter);
-                }
-            }
-        }
-        
-        private void SetupFighterForCombat(Pawn pawn, Fighter fighter)
-        {
-            Log.Message("SolWorld: Setting up " + fighter.WalletShort + " for combat");
-            
-            // Force draft
-            if (pawn.drafter != null)
-            {
-                pawn.drafter.Drafted = true;
-            }
-            
-            // Disable fleeing
-            if (pawn.mindState != null)
-            {
-                pawn.mindState.canFleeIndividual = false;
-            }
-            
-            // Max mood
-            if (pawn.needs?.mood != null)
-            {
-                pawn.needs.mood.CurLevel = 1.0f;
-            }
-            
-            // Clear jobs
-            if (pawn.jobs != null)
-            {
-                try
-                {
-                    pawn.jobs.ClearQueuedJobs();
-                }
-                catch { }
-            }
-            
-            // Clear mental states
-            if (pawn.mindState?.mentalStateHandler?.CurState != null)
-            {
-                try
-                {
-                    pawn.mindState.mentalStateHandler.Reset();
-                }
-                catch { }
-            }
-            
-            // Give attack order
-            GiveAttackOrder(pawn, fighter);
-        }
-        
-        private void EnforceContinuousCombat()
-        {
-            if (currentRoster == null) return;
-            
-            var allFighters = currentRoster.Red.Concat(currentRoster.Blue);
-            var bounds = GetArenaBounds();
-            
-            foreach (var fighter in allFighters)
-            {
-                if (fighter.PawnRef?.Spawned == true && !fighter.PawnRef.Dead && fighter.Alive)
-                {
-                    var pawn = fighter.PawnRef;
-                    
-                    // Maintain combat state
-                    if (pawn.drafter != null)
-                        pawn.drafter.Drafted = true;
-                    
-                    if (pawn.mindState != null)
-                        pawn.mindState.canFleeIndividual = false;
-                    
-                    if (pawn.needs?.mood != null)
-                        pawn.needs.mood.CurLevel = 1.0f;
-                    
-                    // Keep in arena bounds
-                    if (bounds.HasValue && !bounds.Value.Contains(pawn.Position))
-                    {
-                        ForceBackToArena(pawn, bounds.Value);
-                    }
-                    
-                    // Force new attacks if idle
-                    if (IsIdle(pawn))
-                    {
-                        GiveAttackOrder(pawn, fighter);
-                    }
-                }
-            }
-        }
-        
-        private bool IsIdle(Pawn pawn)
-        {
-            if (pawn.CurJob == null) return true;
-            
-            var jobDef = pawn.CurJob.def;
-            return jobDef == JobDefOf.Wait ||
-                   jobDef == JobDefOf.Wait_Wander ||
-                   jobDef == JobDefOf.Goto ||
-                   jobDef == JobDefOf.Wait_Combat;
-        }
-        
-        private void GiveAttackOrder(Pawn pawn, Fighter fighter)
-        {
-            if (pawn?.Spawned != true || currentRoster == null)
-                return;
-            
-            // Find enemy team
-            var enemyTeam = fighter.Team == TeamColor.Red ? currentRoster.Blue : currentRoster.Red;
-            
-            // Find closest alive enemy
-            var target = FindClosestAliveEnemy(pawn, enemyTeam);
-            
-            if (target != null)
-            {
-                bool hasRangedWeapon = HasRangedWeapon(pawn);
-                float distance = pawn.Position.DistanceTo(target.Position);
-                
-                try
-                {
-                    if (hasRangedWeapon && distance > 3f)
-                    {
-                        // Ranged attack
-                        var rangedJob = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
-                        pawn.jobs.TryTakeOrderedJob(rangedJob);
-                    }
-                    else
-                    {
-                        // Melee attack
-                        var meleeJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
-                        pawn.jobs.TryTakeOrderedJob(meleeJob);
-                    }
-                }
-                catch
-                {
-                    // Fallback: move toward enemy
-                    try
-                    {
-                        var moveJob = JobMaker.MakeJob(JobDefOf.Goto, target.Position);
-                        pawn.jobs.TryTakeOrderedJob(moveJob);
-                    }
-                    catch { }
-                }
-            }
-            else
-            {
-                // No target - move toward enemy spawn
-                var enemySpawner = fighter.Team == TeamColor.Red ? blueSpawner : redSpawner;
-                if (enemySpawner != null)
-                {
-                    var targetPos = CellFinder.RandomClosewalkCellNear(enemySpawner.Position, map, 8);
-                    if (targetPos.IsValid)
-                    {
-                        try
-                        {
-                            var moveJob = JobMaker.MakeJob(JobDefOf.Goto, targetPos);
-                            pawn.jobs.TryTakeOrderedJob(moveJob);
-                        }
-                        catch { }
-                    }
-                }
-            }
-        }
-        
-        private void ForceBackToArena(Pawn pawn, CellRect bounds)
-        {
-            var center = new IntVec3(bounds.minX + bounds.Width / 2, 0, bounds.minZ + bounds.Height / 2);
-            var targetPos = CellFinder.RandomClosewalkCellNear(center, map, 5);
-            
-            if (targetPos.IsValid && bounds.Contains(targetPos))
-            {
-                try
-                {
-                    var returnJob = JobMaker.MakeJob(JobDefOf.Goto, targetPos);
-                    pawn.jobs.TryTakeOrderedJob(returnJob);
-                }
-                catch { }
-            }
-        }
-        
-        private Pawn FindClosestAliveEnemy(Pawn attacker, List<Fighter> enemyTeam)
-        {
-            if (attacker?.Spawned != true || enemyTeam == null)
-                return null;
-            
-            Pawn closestEnemy = null;
-            float closestDistance = float.MaxValue;
-            
-            foreach (var enemy in enemyTeam)
-            {
-                if (enemy.PawnRef?.Spawned == true && enemy.Alive && !enemy.PawnRef.Dead)
-                {
-                    var distance = attacker.Position.DistanceTo(enemy.PawnRef.Position);
-                    if (distance < closestDistance)
-                    {
-                        closestDistance = distance;
-                        closestEnemy = enemy.PawnRef;
-                    }
-                }
-            }
-            
-            return closestEnemy;
-        }
-        
-        private bool HasRangedWeapon(Pawn pawn)
-        {
-            if (pawn?.equipment?.Primary == null)
-                return false;
-            
-            var weapon = pawn.equipment.Primary;
-            
-            if (weapon.def.Verbs != null)
-            {
-                foreach (var verb in weapon.def.Verbs)
-                {
-                    if (verb.range > 1.5f)
-                        return true;
-                }
-            }
-            
-            return weapon.def.weaponTags?.Any(tag =>
-                tag.Contains("Gun") ||
-                tag.Contains("Ranged") ||
-                tag.Contains("Rifle") ||
-                tag.Contains("Pistol")) == true;
-        }
-        
-        private void EndRound(string reason)
-        {
-            currentState = ArenaState.Ended;
-            phaseStartTime = DateTime.Now;
-            
-            if (currentRoster == null) return;
-            
-            currentRoster.IsLive = false;
-            currentRoster.Winner = currentRoster.DetermineWinner();
-            
-            Log.Message("SolWorld: Round ended - " + reason + ". Winner: " + currentRoster.Winner);
-            
-            var mockTxids = new string[] { "MockTx1", "MockTx2" };
-            Messages.Message("ROUND COMPLETE! Winner: " + currentRoster.Winner + " team", MessageTypeDefOf.PositiveEvent);
-        }
-        
-        private void StartResetPhase()
-        {
-            currentState = ArenaState.Resetting;
-            phaseStartTime = DateTime.Now;
-            
-            var bounds = GetArenaBounds();
-            if (bounds.HasValue)
-            {
-                arenaReset.ResetArena(map, bounds.Value, arenaBlueprint);
-            }
-            
-            CleanupCurrentRound();
-        }
-        
-        private void CompleteReset()
-        {
-            currentState = ArenaState.Idle;
-            currentRoster = null;
-            
-            ScheduleNextRound();
-            
-            Log.Message("SolWorld: Arena reset complete, next round scheduled");
-        }
-        
-        private void SpawnTeamsWithProperHostility()
-        {
-            if (currentRoster == null || redSpawner == null || blueSpawner == null)
-                return;
-            
-            Log.Message("SolWorld: Creating team factions with proper hostility");
-            
-            // Create hostile factions using specific defs
-            redTeamFaction = CreateHostileFaction("Red Arena Team", true);
-            blueTeamFaction = CreateHostileFaction("Blue Arena Team", false);
-            
-            if (redTeamFaction == null || blueTeamFaction == null)
-            {
-                Log.Error("SolWorld: Failed to create factions!");
-                return;
-            }
-            
-            // Set up all relations immediately
-            SetupFactionRelations();
-            
-            // Spawn teams
-            SpawnTeam(currentRoster.Red, redSpawner.Position, redTeamFaction, TeamColor.Red);
-            SpawnTeam(currentRoster.Blue, blueSpawner.Position, blueTeamFaction, TeamColor.Blue);
-            
-            // Log final relations
-            LogFactionRelations();
-        }
-        
-        private Faction CreateHostileFaction(string name, bool hostileToPlayer)
-        {
-            // Use specific faction defs that work
-            var factionDefName = hostileToPlayer ? "Pirate" : "OutlanderCivil";
-            var factionDef = DefDatabase<FactionDef>.GetNamedSilentFail(factionDefName);
-            
-            if (factionDef == null)
-            {
-                // Fallback to any humanlike faction
-                factionDef = DefDatabase<FactionDef>.AllDefs.FirstOrDefault(f => f.humanlikeFaction);
-            }
-            
-            if (factionDef == null)
-            {
-                Log.Error("SolWorld: No faction def found!");
-                return null;
-            }
-            
-            var faction = new Faction();
-            faction.def = factionDef;
-            faction.Name = name;
-            
-            // Set color spectrum - RED team gets 0.0f (should be red), BLUE team gets 0.6f (should be blue)
-            faction.colorFromSpectrum = hostileToPlayer ? 0.0f : 0.6f;
-            
-            // Add to world
-            Find.FactionManager.Add(faction);
-            
-            Log.Message("SolWorld: Created " + name + " using " + factionDef.defName + " with color " + faction.colorFromSpectrum);
-            
-            return faction;
-        }
-        
-        private void SetupFactionRelations()
-        {
-            Log.Message("SolWorld: Setting up faction relations");
-            
-            // Red team hostile to player
+            // Force hostile to player
             redTeamFaction.SetRelationDirect(Faction.OfPlayer, FactionRelationKind.Hostile, false);
-            Faction.OfPlayer.SetRelationDirect(redTeamFaction, FactionRelationKind.Hostile, false);
+            var redRelation = redTeamFaction.RelationWith(Faction.OfPlayer, false);
+            if (redRelation != null)
+            {
+                redRelation.baseGoodwill = -100;
+                redRelation.kind = FactionRelationKind.Hostile;
+            }
             
-            // Blue team allied to player
+            Find.FactionManager.Add(redTeamFaction);
+            
+            // BLUE TEAM FACTION (Allied to player - shows as BLUE)
+            var civilDef = DefDatabase<FactionDef>.GetNamed("OutlanderCivil");
+            var blueParms = new FactionGeneratorParms(civilDef);
+            blueTeamFaction = FactionGenerator.NewGeneratedFaction(blueParms);
+            blueTeamFaction.Name = "Blue Arena Team";
+            blueTeamFaction.colorFromSpectrum = 0.6f; // Blue color
+            
+            // Force allied to player
             blueTeamFaction.SetRelationDirect(Faction.OfPlayer, FactionRelationKind.Ally, false);
-            Faction.OfPlayer.SetRelationDirect(blueTeamFaction, FactionRelationKind.Ally, false);
+            var blueRelation = blueTeamFaction.RelationWith(Faction.OfPlayer, false);
+            if (blueRelation != null)
+            {
+                blueRelation.baseGoodwill = 75;
+                blueRelation.kind = FactionRelationKind.Ally;
+            }
             
-            // Teams hostile to each other
+            Find.FactionManager.Add(blueTeamFaction);
+            
+            // Make teams hostile to each other
             redTeamFaction.SetRelationDirect(blueTeamFaction, FactionRelationKind.Hostile, false);
             blueTeamFaction.SetRelationDirect(redTeamFaction, FactionRelationKind.Hostile, false);
             
-            // Force goodwill values
-            try
+            var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, false);
+            if (redToBlue != null)
             {
-                var redRelation = redTeamFaction.RelationWith(Faction.OfPlayer, false);
-                if (redRelation != null)
-                {
-                    redRelation.baseGoodwill = -100;
-                    redRelation.kind = FactionRelationKind.Hostile;
-                }
-                
-                var blueRelation = blueTeamFaction.RelationWith(Faction.OfPlayer, false);
-                if (blueRelation != null)
-                {
-                    blueRelation.baseGoodwill = 100;
-                    blueRelation.kind = FactionRelationKind.Ally;
-                }
-                
-                var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, false);
-                if (redToBlue != null)
-                {
-                    redToBlue.baseGoodwill = -100;
-                    redToBlue.kind = FactionRelationKind.Hostile;
-                }
-                
-                var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, false);
-                if (blueToRed != null)
-                {
-                    blueToRed.baseGoodwill = -100;
-                    blueToRed.kind = FactionRelationKind.Hostile;
-                }
+                redToBlue.baseGoodwill = -100;
+                redToBlue.kind = FactionRelationKind.Hostile;
             }
-            catch (Exception ex)
+            
+            var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, false);
+            if (blueToRed != null)
             {
-                Log.Warning("SolWorld: Error setting goodwill: " + ex.Message);
+                blueToRed.baseGoodwill = -100;
+                blueToRed.kind = FactionRelationKind.Hostile;
             }
+            
+            Log.Message("SolWorld: Factions created - Red hostile: " + redTeamFaction.HostileTo(Faction.OfPlayer) + ", Blue hostile: " + blueTeamFaction.HostileTo(Faction.OfPlayer));
         }
         
-        private void LogFactionRelations()
+        private void SpawnBothTeams()
         {
-            try
-            {
-                var redToPlayer = redTeamFaction.RelationWith(Faction.OfPlayer).kind;
-                var blueToPlayer = blueTeamFaction.RelationWith(Faction.OfPlayer).kind;
-                var redToBlue = redTeamFaction.RelationWith(blueTeamFaction).kind;
-                
-                Log.Message("SolWorld: FACTION RELATIONS:");
-                Log.Message("Red->Player: " + redToPlayer + " (should be Hostile)");
-                Log.Message("Blue->Player: " + blueToPlayer + " (should be Ally)");
-                Log.Message("Red->Blue: " + redToBlue + " (should be Hostile)");
-                Log.Message("Red color: " + redTeamFaction.colorFromSpectrum + " (should be 0.0)");
-                Log.Message("Blue color: " + blueTeamFaction.colorFromSpectrum + " (should be 0.6)");
-                
-                if (redToPlayer != FactionRelationKind.Hostile)
-                {
-                    Log.Error("SolWorld: RED TEAM IS NOT HOSTILE TO PLAYER!");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error("SolWorld: Error logging relations: " + ex.Message);
-            }
+            Log.Message("SolWorld: Spawning both teams instantly");
+            
+            // Spawn red team (hostile)
+            SpawnTeam(currentRoster.Red, redSpawner.Position, redTeamFaction, TeamColor.Red);
+            
+            // Spawn blue team (allied)
+            SpawnTeam(currentRoster.Blue, blueSpawner.Position, blueTeamFaction, TeamColor.Blue);
+            
+            Log.Message("SolWorld: Both teams spawned successfully - 20 fighters on map");
         }
         
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, Faction teamFaction, TeamColor teamColor)
@@ -766,7 +423,7 @@ namespace SolWorldMod
                     GenSpawn.Spawn(pawn, spawnPos, map);
                     fighter.PawnRef = pawn;
                     
-                    Log.Message("SolWorld: Spawned " + fighter.WalletShort + " (" + teamColor + ") with faction " + teamFaction.Name);
+                    Log.Message("SolWorld: Spawned " + fighter.WalletShort + " (" + teamColor + ") with faction " + teamFaction.Name + " (hostile to player: " + pawn.HostileTo(Faction.OfPlayer) + ")");
                 }
             }
         }
@@ -829,19 +486,28 @@ namespace SolWorldMod
         
         private void MakeWarrior(Pawn pawn)
         {
-            // Anti-flee
+            // CRITICAL: Set up for extreme aggression
             if (pawn.mindState != null)
             {
                 pawn.mindState.canFleeIndividual = false;
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
             }
             
-            // Max mood
+            // Max mood and needs
             if (pawn.needs?.mood != null)
             {
                 pawn.needs.mood.CurLevel = 1.0f;
             }
+            if (pawn.needs?.rest != null)
+            {
+                pawn.needs.rest.CurLevel = 1.0f;
+            }
+            if (pawn.needs?.food != null)
+            {
+                pawn.needs.food.CurLevel = 1.0f;
+            }
             
-            // Boost combat skills
+            // Boost combat skills to maximum
             if (pawn.skills != null)
             {
                 try
@@ -851,13 +517,13 @@ namespace SolWorldMod
                     
                     if (shooting != null)
                     {
-                        shooting.Level = 15;
+                        shooting.Level = 20;
                         shooting.passion = Passion.Major;
                     }
                     
                     if (melee != null)
                     {
-                        melee.Level = 15;
+                        melee.Level = 20;
                         melee.passion = Passion.Major;
                     }
                 }
@@ -888,6 +554,342 @@ namespace SolWorldMod
                 }
                 catch { }
             }
+        }
+        
+        private void TransitionToCombat()
+        {
+            currentState = ArenaState.Combat;
+            combatStartTick = Find.TickManager.TicksGame; // Start game-time tracking
+            
+            Log.Message("SolWorld: TRANSITION TO COMBAT - UNPAUSING AND FORCING FIGHT!");
+            
+            // CRITICAL: Aggressive unpause with multiple attempts
+            int attempts = 0;
+            while (Find.TickManager.Paused && attempts < 10)
+            {
+                attempts++;
+                Find.TickManager.TogglePaused();
+                Log.Message("SolWorld: Unpause attempt " + attempts + " - Still paused: " + Find.TickManager.Paused);
+            }
+            
+            // Force normal speed
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+            
+            currentRoster.IsLive = true;
+            
+            // CRITICAL: Force all pawns into immediate combat mode
+            InitiateInstantCombat();
+            
+            Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
+        }
+        
+        private void InitiateInstantCombat()
+        {
+            Log.Message("SolWorld: INITIATING INSTANT COMBAT - ALL PAWNS TO BATTLE STATIONS!");
+            
+            var allFighters = currentRoster.Red.Concat(currentRoster.Blue);
+            
+            foreach (var fighter in allFighters)
+            {
+                if (fighter.PawnRef?.Spawned == true && !fighter.PawnRef.Dead)
+                {
+                    SetupFighterForCombat(fighter.PawnRef, fighter);
+                }
+            }
+        }
+        
+        private void SetupFighterForCombat(Pawn pawn, Fighter fighter)
+        {
+            Log.Message("SolWorld: Setting up " + fighter.WalletShort + " for EXTREME combat");
+            
+            // Force draft
+            if (pawn.drafter != null)
+            {
+                pawn.drafter.Drafted = true;
+            }
+            
+            // Ultra-aggressive mindstate
+            if (pawn.mindState != null)
+            {
+                pawn.mindState.canFleeIndividual = false;
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+                pawn.mindState.enemyTarget = null; // Clear to allow new targeting
+            }
+            
+            // Max mood and needs
+            if (pawn.needs?.mood != null)
+            {
+                pawn.needs.mood.CurLevel = 1.0f;
+            }
+            
+            // Clear all current jobs
+            if (pawn.jobs != null)
+            {
+                try
+                {
+                    pawn.jobs.ClearQueuedJobs();
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                }
+                catch { }
+            }
+            
+            // Clear mental states that might interfere
+            if (pawn.mindState?.mentalStateHandler?.CurState != null)
+            {
+                try
+                {
+                    pawn.mindState.mentalStateHandler.Reset();
+                }
+                catch { }
+            }
+            
+            // Give immediate attack order
+            GiveAttackOrder(pawn, fighter);
+        }
+        
+        private void EnforceContinuousCombat()
+        {
+            if (currentRoster == null) return;
+            
+            var allFighters = currentRoster.Red.Concat(currentRoster.Blue);
+            var bounds = GetArenaBounds();
+            
+            foreach (var fighter in allFighters)
+            {
+                if (fighter.PawnRef?.Spawned == true && !fighter.PawnRef.Dead && fighter.Alive)
+                {
+                    var pawn = fighter.PawnRef;
+                    
+                    // Maintain combat state every check
+                    if (pawn.drafter != null)
+                        pawn.drafter.Drafted = true;
+                    
+                    if (pawn.mindState != null)
+                    {
+                        pawn.mindState.canFleeIndividual = false;
+                        if (pawn.mindState.duty?.def != DutyDefOf.AssaultColony)
+                            pawn.mindState.duty = new PawnDuty(DutyDefOf.AssaultColony);
+                    }
+                    
+                    if (pawn.needs?.mood != null && pawn.needs.mood.CurLevel < 0.5f)
+                        pawn.needs.mood.CurLevel = 1.0f;
+                    
+                    // Keep in arena bounds
+                    if (bounds.HasValue && !bounds.Value.Contains(pawn.Position))
+                    {
+                        ForceBackToArena(pawn, bounds.Value);
+                    }
+                    
+                    // Force new attacks if idle or not fighting
+                    if (IsIdle(pawn))
+                    {
+                        GiveAttackOrder(pawn, fighter);
+                    }
+                }
+            }
+        }
+        
+        private bool IsIdle(Pawn pawn)
+        {
+            if (pawn.CurJob == null) return true;
+            
+            var jobDef = pawn.CurJob.def;
+            
+            // Only consider actual attack jobs as "not idle"
+            if (jobDef == JobDefOf.AttackMelee || jobDef == JobDefOf.AttackStatic)
+                return false;
+            
+            // Everything else is considered idle and needs new orders
+            return true;
+        }
+        
+        private void GiveAttackOrder(Pawn pawn, Fighter fighter)
+        {
+            if (pawn?.Spawned != true || currentRoster == null)
+                return;
+            
+            // Find enemy team
+            var enemyTeam = fighter.Team == TeamColor.Red ? currentRoster.Blue : currentRoster.Red;
+            
+            // Find closest alive enemy
+            var target = FindClosestAliveEnemy(pawn, enemyTeam);
+            
+            if (target != null)
+            {
+                try
+                {
+                    // Force end current job
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                    
+                    Job attackJob;
+                    bool hasRangedWeapon = HasRangedWeapon(pawn);
+                    float distance = pawn.Position.DistanceTo(target.Position);
+                    
+                    if (hasRangedWeapon && distance > 3f)
+                    {
+                        // Ranged attack
+                        attackJob = JobMaker.MakeJob(JobDefOf.AttackStatic, target);
+                    }
+                    else
+                    {
+                        // Melee attack
+                        attackJob = JobMaker.MakeJob(JobDefOf.AttackMelee, target);
+                    }
+                    
+                    // Force start the attack
+                    pawn.jobs.StartJob(attackJob, JobCondition.InterruptForced);
+                    
+                    // Reduced logging to avoid spam
+                    if (Find.TickManager.TicksGame % 60 == 0)
+                    {
+                        Log.Message("SolWorld: " + fighter.WalletShort + " attacking " + target.Name);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (Find.TickManager.TicksGame % 300 == 0) // Log errors every 5 seconds
+                    {
+                        Log.Warning("SolWorld: Failed to give attack order - " + ex.Message);
+                    }
+                    // Fallback: move toward enemy
+                    try
+                    {
+                        pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                        var moveJob = JobMaker.MakeJob(JobDefOf.Goto, target.Position);
+                        pawn.jobs.StartJob(moveJob, JobCondition.InterruptForced);
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                // No target - move toward enemy spawn
+                var enemySpawner = fighter.Team == TeamColor.Red ? blueSpawner : redSpawner;
+                if (enemySpawner != null)
+                {
+                    var targetPos = CellFinder.RandomClosewalkCellNear(enemySpawner.Position, map, 8);
+                    if (targetPos.IsValid)
+                    {
+                        try
+                        {
+                            pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                            var moveJob = JobMaker.MakeJob(JobDefOf.Goto, targetPos);
+                            pawn.jobs.StartJob(moveJob, JobCondition.InterruptForced);
+                            
+                            if (Find.TickManager.TicksGame % 180 == 0) // Log every 3 seconds
+                            {
+                                Log.Message("SolWorld: " + fighter.WalletShort + " moving toward enemy spawn");
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+        }
+        
+        private void ForceBackToArena(Pawn pawn, CellRect bounds)
+        {
+            var center = new IntVec3(bounds.minX + bounds.Width / 2, 0, bounds.minZ + bounds.Height / 2);
+            var targetPos = CellFinder.RandomClosewalkCellNear(center, map, 5);
+            
+            if (targetPos.IsValid && bounds.Contains(targetPos))
+            {
+                try
+                {
+                    pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
+                    var returnJob = JobMaker.MakeJob(JobDefOf.Goto, targetPos);
+                    pawn.jobs.StartJob(returnJob, JobCondition.InterruptForced);
+                }
+                catch { }
+            }
+        }
+        
+        private Pawn FindClosestAliveEnemy(Pawn attacker, List<Fighter> enemyTeam)
+        {
+            if (attacker?.Spawned != true || enemyTeam == null)
+                return null;
+            
+            Pawn closestEnemy = null;
+            float closestDistance = float.MaxValue;
+            
+            foreach (var enemy in enemyTeam)
+            {
+                if (enemy.PawnRef?.Spawned == true && enemy.Alive && !enemy.PawnRef.Dead)
+                {
+                    var distance = attacker.Position.DistanceTo(enemy.PawnRef.Position);
+                    if (distance < closestDistance)
+                    {
+                        closestDistance = distance;
+                        closestEnemy = enemy.PawnRef;
+                    }
+                }
+            }
+            
+            return closestEnemy;
+        }
+        
+        private bool HasRangedWeapon(Pawn pawn)
+        {
+            if (pawn?.equipment?.Primary == null)
+                return false;
+            
+            var weapon = pawn.equipment.Primary;
+            
+            if (weapon.def.Verbs != null)
+            {
+                foreach (var verb in weapon.def.Verbs)
+                {
+                    if (verb.range > 1.5f)
+                        return true;
+                }
+            }
+            
+            return weapon.def.weaponTags?.Any(tag =>
+                tag.Contains("Gun") ||
+                tag.Contains("Ranged") ||
+                tag.Contains("Rifle") ||
+                tag.Contains("Pistol")) == true;
+        }
+        
+        private void EndRound(string reason)
+        {
+            currentState = ArenaState.Ended;
+            
+            if (currentRoster == null) return;
+            
+            currentRoster.IsLive = false;
+            currentRoster.Winner = currentRoster.DetermineWinner();
+            
+            Log.Message("SolWorld: Round ended - " + reason + ". Winner: " + currentRoster.Winner);
+            
+            var mockTxids = new string[] { "MockTx1", "MockTx2" };
+            Messages.Message("ROUND COMPLETE! Winner: " + currentRoster.Winner + " team", MessageTypeDefOf.PositiveEvent);
+        }
+        
+        private void StartResetPhase()
+        {
+            currentState = ArenaState.Resetting;
+            
+            Log.Message("SolWorld: Starting reset phase");
+            
+            var bounds = GetArenaBounds();
+            if (bounds.HasValue)
+            {
+                arenaReset.ResetArena(map, bounds.Value, arenaBlueprint);
+            }
+            
+            CleanupCurrentRound();
+        }
+        
+        private void CompleteReset()
+        {
+            currentState = ArenaState.Idle;
+            currentRoster = null;
+            combatStartTick = -1;
+            
+            ScheduleNextRound(); // Schedule next round in 3 minutes
+            
+            Log.Message("SolWorld: Arena reset complete, next round scheduled in 3 minutes");
         }
         
         private void CleanupCurrentRound()
@@ -921,15 +923,22 @@ namespace SolWorldMod
             }
         }
         
-        // UI Methods
+        // UI Methods - Complete from original
         public float GetTimeLeftInCurrentPhase()
         {
-            if (currentState == ArenaState.Idle) return 0f;
-            
-            var elapsed = (float)(DateTime.Now - phaseStartTime).TotalSeconds;
-            var total = currentState == ArenaState.Preview ? previewDurationSeconds : combatDurationSeconds;
-            
-            return Math.Max(0, total - elapsed);
+            switch (currentState)
+            {
+                case ArenaState.Preview:
+                    var previewElapsed = (float)(DateTime.Now - previewStartTime).TotalSeconds;
+                    return Math.Max(0, PREVIEW_SECONDS - previewElapsed);
+                    
+                case ArenaState.Combat:
+                    var combatElapsed = Find.TickManager.TicksGame - combatStartTick;
+                    return Math.Max(0, (COMBAT_TICKS - combatElapsed) / 60f);
+                    
+                default:
+                    return 0f;
+            }
         }
         
         public string GetPhaseDisplayText()
@@ -963,15 +972,16 @@ namespace SolWorldMod
             
             currentRoster = testRoster;
             
-            // Spawn with proper hostility
-            SpawnTeamsWithProperHostility();
+            // Spawn with proper factions
+            CreateArenaFactions();
+            SpawnBothTeams();
             
             // Force immediate combat
-            InitiateAggressiveCombat();
+            InitiateInstantCombat();
             
             // Set combat state
             currentState = ArenaState.Combat;
-            phaseStartTime = DateTime.Now;
+            combatStartTick = Find.TickManager.TicksGame;
             
             Log.Message("SolWorld: Test fighters spawned and combat initiated!");
         }

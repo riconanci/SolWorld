@@ -90,7 +90,7 @@ namespace SolWorldMod
                         defaultDesc = arenaComp.IsActive 
                             ? "Stop automated arena rounds" 
                             : "Start automated arena rounds (requires both Red and Blue team spawners)",
-                        icon = ContentFinder<Texture2D>.Get(arenaComp.IsActive ? "UI/Commands/Halt" : "UI/Commands/Attack", true) ?? BaseContent.BadTex,
+                        icon = BaseContent.BadTex, // FIXED: Use reliable texture
                         action = () => {
                             if (arenaComp.IsActive)
                             {
@@ -110,7 +110,7 @@ namespace SolWorldMod
                         {
                             defaultLabel = "DEV: Force Round",
                             defaultDesc = "Force start next round immediately (dev mode only)",
-                            icon = ContentFinder<Texture2D>.Get("UI/Commands/Draft", true) ?? BaseContent.BadTex,
+                            icon = BaseContent.BadTex, // FIXED: Use reliable texture
                             action = () => arenaComp.ForceNextRound()
                         };
                         
@@ -119,7 +119,7 @@ namespace SolWorldMod
                         {
                             defaultLabel = "DEV: Refresh Setup",
                             defaultDesc = "Force refresh spawner detection (dev mode only)",
-                            icon = ContentFinder<Texture2D>.Get("UI/Commands/Reload", true) ?? BaseContent.BadTex,
+                            icon = BaseContent.BadTex, // FIXED: Use reliable texture
                             action = () => {
                                 arenaComp.RegisterArenaCore(this); // This calls RefreshSpawners
                                 Messages.Message("Spawner detection refreshed - check log for results", MessageTypeDefOf.NeutralEvent);
@@ -131,7 +131,7 @@ namespace SolWorldMod
                         {
                             defaultLabel = "DEV: Test Spawn",
                             defaultDesc = "Test fighter spawning without starting a round (dev mode only)",
-                            icon = ContentFinder<Texture2D>.Get("UI/Commands/Add", true) ?? BaseContent.BadTex,
+                            icon = BaseContent.BadTex, // FIXED: Use reliable texture
                             action = () => {
                                 if (arenaComp.HasValidSetup)
                                 {
@@ -248,16 +248,6 @@ namespace SolWorldMod
             {
                 // Show a warning radius if no valid bounds can be calculated
                 GenDraw.DrawRadiusRing(Position, 10f, Color.red);
-                
-                // Draw text overlay indicating missing spawners
-                var worldPos = Position.ToVector3Shifted();
-                var screenPos = Find.Camera.WorldToScreenPoint(worldPos);
-                screenPos.y = Screen.height - screenPos.y;
-                
-                var labelRect = new Rect(screenPos.x - 75f, screenPos.y - 10f, 150f, 20f);
-                GUI.color = Color.red;
-                GUI.Label(labelRect, "Missing Spawners!");
-                GUI.color = Color.white;
             }
         }
         

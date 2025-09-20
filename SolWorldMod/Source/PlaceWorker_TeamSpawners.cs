@@ -60,7 +60,7 @@ namespace SolWorldMod
         }
     }
     
-    // Shared logic for both spawner types
+    // FIXED: No GUI calls in PlaceWorker
     public static class SpawnerPlaceWorkerHelper
     {
         public static void DrawSpawnerGhost(Map map, IntVec3 spawnerPos, TeamColor team)
@@ -120,35 +120,18 @@ namespace SolWorldMod
             }
             else
             {
-                // Show what's still needed with on-screen text
-                var worldPos = spawnerPos.ToVector3Shifted();
-                var screenPos = Find.Camera.WorldToScreenPoint(worldPos);
-                screenPos.y = Screen.height - screenPos.y;
-                
-                string message = "";
-                if (arenaCore == null && otherSpawner == null)
-                    message = $"Need Arena Core and {(team == TeamColor.Red ? "Blue" : "Red")} Spawner";
-                else if (arenaCore == null)
-                    message = "Need Arena Core";
-                else if (otherSpawner == null)
-                    message = $"Need {(team == TeamColor.Red ? "Blue" : "Red")} Team Spawner";
-                
-                if (!string.IsNullOrEmpty(message))
+                // REMOVED: All GUI.Label calls that caused the error
+                // Just show visual indicators without text
+                if (arenaCore == null)
                 {
-                    var labelRect = new Rect(screenPos.x - 80f, screenPos.y - 20f, 160f, 20f);
-                    
-                    GUI.color = Color.white;
-                    var oldFont = Text.Font;
-                    var oldAnchor = Text.Anchor;
-                    
-                    Text.Font = GameFont.Tiny;
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    
-                    Widgets.Label(labelRect, message);
-                    
-                    Text.Anchor = oldAnchor;
-                    Text.Font = oldFont;
-                    GUI.color = Color.white;
+                    // Draw red ring to indicate missing arena core
+                    GenDraw.DrawRadiusRing(spawnerPos, 8f, Color.red);
+                }
+                
+                if (otherSpawner == null)
+                {
+                    // Draw yellow ring to indicate missing other spawner
+                    GenDraw.DrawRadiusRing(spawnerPos, 6f, Color.yellow);
                 }
             }
         }
