@@ -17,7 +17,9 @@ namespace SolWorldMod
             if (map == null) return;
             
             var arenaComp = map.GetComponent<MapComponent_SolWorldArena>();
-            if (arenaComp?.CurrentRoster == null || !arenaComp.IsActive)
+            
+            // FIXED: ALWAYS show scoreboard when arena is active, even during round end phases
+            if (arenaComp?.IsActive != true)
                 return;
             
             // Handle phase-specific countdown logic
@@ -25,6 +27,7 @@ namespace SolWorldMod
             HandleCombatCountdown(arenaComp);
             HandleNextRoundCountdown(arenaComp);
             
+            // FIXED: Show scoreboard even when roster is null (during transitions)
             var roster = arenaComp.CurrentRoster;
             
             // MAIN DISPLAY: Extended center leaderboard that includes pawn squares
@@ -98,21 +101,25 @@ namespace SolWorldMod
             }
         }
         
-        // NEW: Extended leaderboard that encompasses everything in one cohesive layout
+        // FIXED: Extended leaderboard that stays visible even when roster is null
         private static void DrawExtendedLeaderboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
-            // ENHANCED LAYOUT: Larger box that includes pawn squares
-            const float pawnBoxSize = 56f; // INCREASED from 48f to 56f (larger squares)
-            const float pawnBoxSpacing = 6f; // Increased spacing
-            const float teamSeparation = 80f; // Space between teams
+            // Calculate dimensions based on whether we have a roster
+            const float pawnBoxSize = 56f;
+            const float pawnBoxSpacing = 6f;
+            const float teamSeparation = 80f;
             
-            var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
-            var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
-            var pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
+            float pawnAreaWidth = 600f; // Default width when no roster
+            if (roster != null)
+            {
+                var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
+                var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
+                pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
+            }
             
             // Calculate total dimensions - leaderboard now encompasses pawn squares
-            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f); // At least 700px wide, or wide enough for pawns + padding
-            var totalHeight = 280f; // Increased height to include pawn squares
+            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f);
+            var totalHeight = roster != null ? 280f : 180f; // Smaller when no roster
             
             var centerX = UI.screenWidth / 2f;
             var topY = 15f; // Very top of screen
@@ -121,12 +128,12 @@ namespace SolWorldMod
             
             // Enhanced semi-transparent background
             var oldColor = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.9f); // Slightly more opaque
+            GUI.color = new Color(0f, 0f, 0f, 0.9f);
             GUI.DrawTexture(rect, BaseContent.WhiteTex);
             
             // Border for better definition
             GUI.color = Color.white;
-            Widgets.DrawBox(rect, 3); // Thicker border
+            Widgets.DrawBox(rect, 3);
             GUI.color = oldColor;
             
             var innerRect = rect.ContractedBy(20f);
@@ -134,7 +141,7 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
             
             float y = innerRect.y;
-            float lineHeight = 24f; // Increased line height
+            float lineHeight = 24f;
             
             // Header with enhanced styling
             GUI.color = Color.yellow;
@@ -148,18 +155,56 @@ namespace SolWorldMod
             // MAIN TIMER DISPLAY - Shows different content based on phase
             DrawMainTimer(arenaComp, roster, innerRect, ref y);
             
-            // Match info in a more compact format
-            Text.Font = GameFont.Small;
-            GUI.color = Color.white;
-            var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
-            Text.Anchor = TextAnchor.MiddleCenter;
-            var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
-            Widgets.Label(matchInfoRect, matchText);
-            Text.Anchor = TextAnchor.UpperLeft;
-            y += lineHeight + 10f;
-            
-            // INTEGRATED TEAM DISPLAYS - Now part of the main leaderboard
-            DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
+            // FIXED: Match info only if we have a roster
+            if (roster != null)
+            {
+                Text.Font = GameFont.Small;
+                GUI.color = Color.white;
+                var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
+                Widgets.Label(matchInfoRect, matchText);
+                Text.Anchor = TextAnchor.UpperLeft;
+                y += lineHeight + 10f;
+                
+                // INTEGRATED TEAM DISPLAYS - Only when we have roster
+                DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
+            }
+            else
+            {
+                // FIXED: Show arena status when no active roster
+                Text.Font = GameFont.Small;
+                GUI.color = Color.cyan;
+                var statusRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                
+                string statusText = "Arena Active - Waiting for fighters...";
+                switch (arenaComp.CurrentState)
+                {
+                    case ArenaState.Idle:
+                        var nextRoundTime = arenaComp.GetTimeUntilNextRound();
+                        if (nextRoundTime > 0)
+                        {
+                            var minutes = nextRoundTime / 60;
+                            var seconds = nextRoundTime % 60;
+                            statusText = $"⏰ NEXT ROUND: {minutes:F0}:{seconds:D2}";
+                        }
+                        else
+                        {
+                            statusText = "✅ STARTING NEW ROUND...";
+                        }
+                        break;
+                    case ArenaState.Resetting:
+                        statusText = "⚙️ RESETTING ARENA...";
+                        break;
+                    case ArenaState.Ended:
+                        statusText = "🏆 ROUND COMPLETE - PREPARING RESET...";
+                        break;
+                }
+                
+                Widgets.Label(statusRect, statusText);
+                Text.Anchor = TextAnchor.UpperLeft;
+            }
             
             // Reset styling
             GUI.color = Color.white;
@@ -167,7 +212,7 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        // Main timer that changes based on current phase - ENHANCED to stay visible during round end
+        // FIXED: Main timer that changes based on current phase and handles null roster
         private static void DrawMainTimer(MapComponent_SolWorldArena arenaComp, RoundRoster roster, Rect innerRect, ref float y)
         {
             string timerText = "";
@@ -193,7 +238,7 @@ namespace SolWorldMod
                 case ArenaState.Ended:
                     // FIXED: Keep leaderboard visible and show next round countdown
                     var nextRoundTime = arenaComp.GetTimeUntilNextRound();
-                    if (roster.Winner.HasValue)
+                    if (roster?.Winner.HasValue == true)
                     {
                         if (nextRoundTime > 0)
                         {
@@ -276,9 +321,11 @@ namespace SolWorldMod
             }
         }
         
-        // Integrated team displays that are part of the main leaderboard box
+        // FIXED: Only draw team displays when roster exists
         private static void DrawIntegratedTeamDisplays(RoundRoster roster, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
         {
+            if (roster?.Red == null || roster?.Blue == null) return;
+            
             var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
             var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
             var totalPawnWidth = redTeamWidth + teamSeparation + blueTeamWidth;

@@ -43,6 +43,35 @@ namespace SolWorldMod
             }
         }
 
+        // FIXED: Patch downed pawn job assignment to prevent pathing errors
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(Verse.AI.JobDriver), "DriverTick")]
+        public static bool JobDriver_DriverTick_Prefix(Verse.AI.JobDriver __instance)
+        {
+            try
+            {
+                // Prevent downed arena pawns from trying to path
+                if (__instance?.pawn != null && __instance.pawn.Downed)
+                {
+                    var arenaComp = __instance.pawn.Map?.GetComponent<MapComponent_SolWorldArena>();
+                    if (arenaComp?.IsActive == true && arenaComp.GetPawnTeam(__instance.pawn).HasValue)
+                    {
+                        // This is a downed arena pawn - end their job to prevent pathing errors
+                        if (__instance.pawn.jobs?.curJob != null)
+                        {
+                            __instance.pawn.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                        }
+                        return false; // Skip the original DriverTick
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning("SolWorld: Error in downed pawn job prevention: " + ex.Message);
+            }
+            return true; // Continue with original method
+        }
+
         private static void HandlePawnDeath(Pawn victim, DamageInfo? damageInfo)
         {
             if (victim?.Map == null)
@@ -58,8 +87,15 @@ namespace SolWorldMod
             if (victimFighter == null)
                 return; // Not an arena fighter
 
-            // Mark victim as dead
+            // Mark victim as dead and stop all their jobs
             victimFighter.Alive = false;
+            
+            // FIXED: Immediately stop all jobs for dead pawns to prevent pathing errors
+            if (victim.jobs != null)
+            {
+                victim.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                victim.jobs.ClearQueuedJobs();
+            }
             
             Log.Message("SolWorld: " + victimFighter.WalletShort + " (" + victimFighter.Team.ToString() + ") was killed");
 

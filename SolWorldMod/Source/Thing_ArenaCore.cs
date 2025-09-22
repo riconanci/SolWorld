@@ -299,9 +299,11 @@ namespace SolWorldMod
             // Arena Core status
             status += "✓ Arena Core: Operational\n";
             
-            // Check for spawners
+            // Check for spawners - FIXED: Force refresh before checking
             if (Map != null)
             {
+                cachedArenaComp.ForceRefreshSpawners(); // This will update spawner references
+                
                 var redSpawner = Map.listerBuildings.allBuildingsColonist
                     .FirstOrDefault(b => b.def?.defName == "SolWorld_RedSpawn");
                 var blueSpawner = Map.listerBuildings.allBuildingsColonist
@@ -415,6 +417,9 @@ namespace SolWorldMod
                         text += $"\nPer winner: {cachedArenaComp.CurrentRoster.PerWinnerPayout:F3} SOL";
                     }
                 }
+                
+                // FIXED: Always force refresh spawners before checking setup status
+                cachedArenaComp.ForceRefreshSpawners();
                 
                 // Show setup status
                 if (!cachedArenaComp.HasValidSetup)
