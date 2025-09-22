@@ -35,7 +35,7 @@ namespace SolWorldMod
             }
         }
         
-        // NEW: This runs during OnGUI and works even when game is paused
+        // CRITICAL: Handle preview countdown that works during pause
         private static void HandlePreviewCountdown(MapComponent_SolWorldArena arenaComp)
         {
             if (!arenaComp.IsPreviewActive)
@@ -54,11 +54,11 @@ namespace SolWorldMod
             }
             lastPreviewTimeCheck = timeRemaining;
             
-            // CRITICAL: When countdown reaches zero, trigger combat transition
+            // CRITICAL: When countdown reaches zero, flag for Arena Core to handle
             if (timeRemaining <= 0f && lastFrameWasPreview)
             {
-                Log.Message("SolWorld: ===== UI TRIGGERED COMBAT TRANSITION =====");
-                arenaComp.RequestCombatTransition();
+                Log.Message("SolWorld: ===== UI COUNTDOWN COMPLETE - FLAGGING FOR AUTO-UNPAUSE =====");
+                arenaComp.RequestCombatTransition(); // This sets the flag for Arena Core to see
                 lastFrameWasPreview = false;
                 return;
             }

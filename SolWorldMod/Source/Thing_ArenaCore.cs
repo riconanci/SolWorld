@@ -55,6 +55,18 @@ namespace SolWorldMod
                 var arenaComp = Map?.GetComponent<MapComponent_SolWorldArena>();
                 if (arenaComp != null)
                 {
+                    // NEW: Check if UI wants us to automatically trigger the unpause
+                    if (arenaComp.ShouldUITriggerUnpause)
+                    {
+                        Log.Message("SolWorld: UI flagged for auto-unpause - triggering from Gizmo context!");
+                        
+                        // Call the EXACT same unpause method as the manual button
+                        arenaComp.ForceUnpause();
+                        
+                        // This works because we're in the same GetGizmos() -> UI context 
+                        // as the manual button, so RimWorld allows the unpause
+                    }
+                    
                     if (!arenaComp.IsActive)
                     {
                         // Start Arena button
@@ -255,6 +267,12 @@ namespace SolWorldMod
                     {
                         text += "\nToken: " + settings.tokenMint.Substring(0, 8) + "...";
                     }
+                }
+                
+                // NEW: Show auto-unpause status for debugging
+                if (arenaComp.ShouldUITriggerUnpause)
+                {
+                    text += "\nAUTO-UNPAUSE: Ready to trigger!";
                 }
             }
             

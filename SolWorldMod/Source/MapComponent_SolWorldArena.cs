@@ -35,11 +35,9 @@ namespace SolWorldMod
         private List<Pawn> blueTeamPawns = new List<Pawn>();
         private Dictionary<Pawn, TeamColor> pawnTeamMap = new Dictionary<Pawn, TeamColor>();
         
-        // DELAYED UNPAUSE SYSTEM - Fixed approach with delay
+        // NEW: UI-TRIGGERED UNPAUSE SYSTEM - Let UI handle the unpause directly
         private bool previewCompleted = false;
-        private bool combatTransitionRequested = false;
-        private int unpauseDelayTicks = 0;
-        private const int UNPAUSE_DELAY_FRAMES = 5; // Wait 5 frames before unpausing
+        private bool uiShouldTriggerUnpause = false; // NEW: Flag for UI to trigger unpause
         
         // Combat enforcement
         private bool combatInitiated = false;
@@ -58,6 +56,7 @@ namespace SolWorldMod
         // Preview timing accessors for UI
         public DateTime PreviewStartTime => previewStartTime;
         public bool IsPreviewActive => currentState == ArenaState.Preview && !previewCompleted;
+        public bool ShouldUITriggerUnpause => uiShouldTriggerUnpause; // NEW: UI checks this
         public float PreviewTimeRemaining 
         { 
             get 
@@ -88,8 +87,7 @@ namespace SolWorldMod
             Scribe_Values.Look(ref combatInitiated, "combatInitiated", false);
             Scribe_Values.Look(ref lastCombatEnforcementTick, "lastCombatEnforcementTick", -1);
             Scribe_Values.Look(ref previewCompleted, "previewCompleted", false);
-            Scribe_Values.Look(ref combatTransitionRequested, "combatTransitionRequested", false);
-            Scribe_Values.Look(ref unpauseDelayTicks, "unpauseDelayTicks", 0);
+            Scribe_Values.Look(ref uiShouldTriggerUnpause, "uiShouldTriggerUnpause", false);
             Scribe_Deep.Look(ref currentRoster, "currentRoster");
             Scribe_References.Look(ref redTeamFaction, "redTeamFaction");
             Scribe_References.Look(ref blueTeamFaction, "blueTeamFaction");
@@ -124,24 +122,6 @@ namespace SolWorldMod
                 
             var currentTick = Find.TickManager.TicksGame;
             
-            // FIXED: Handle delayed unpause - this runs even when game is "paused" during transition
-            if (combatTransitionRequested && unpauseDelayTicks > 0)
-            {
-                unpauseDelayTicks--;
-                if (unpauseDelayTicks <= 0)
-                {
-                    Log.Message("SolWorld: Delay completed, executing combat transition NOW!");
-                    combatTransitionRequested = false;
-                    ExecuteCombatTransition();
-                    return;
-                }
-                else
-                {
-                    Log.Message($"SolWorld: Unpause delay: {unpauseDelayTicks} frames remaining");
-                    return;
-                }
-            }
-            
             // Check if it's time for the next scheduled round
             if (currentState == ArenaState.Idle && nextRoundTick > 0 && currentTick >= nextRoundTick)
             {
@@ -150,7 +130,7 @@ namespace SolWorldMod
                 return;
             }
             
-            // Handle phase transitions (no preview handling here anymore)
+            // Handle phase transitions (NO automatic unpause logic here anymore)
             HandlePhaseTransitions();
             
             // Combat enforcement every 3 seconds during combat
@@ -167,84 +147,41 @@ namespace SolWorldMod
             }
         }
         
-        // Called by UI when preview timer expires
+        // NEW: Called by UI when preview timer expires - just sets flag for ArenaCore to handle
         public void RequestCombatTransition()
         {
             if (currentState == ArenaState.Preview && !previewCompleted)
             {
-                Log.Message("SolWorld: UI requested combat transition - starting delay countdown!");
+                Log.Message("SolWorld: UI requested combat transition - flagging for Arena Core to handle!");
                 previewCompleted = true;
-                combatTransitionRequested = true;
-                unpauseDelayTicks = UNPAUSE_DELAY_FRAMES; // Wait 5 frames before attempting unpause
+                uiShouldTriggerUnpause = true; // UI will see this and trigger the manual unpause
             }
+        }
+        
+        // NEW: Called by ArenaCore when UI triggers the manual unpause
+        public void OnUITriggeredUnpause()
+        {
+            Log.Message("SolWorld: ===== UI TRIGGERED UNPAUSE SUCCESS =====");
+            
+            uiShouldTriggerUnpause = false; // Clear the flag
+            
+            // Now start combat from the SAME context as manual button (UI/Gizmo context)
+            ExecuteCombatTransition();
         }
         
         private void ExecuteCombatTransition()
         {
-            Log.Message("SolWorld: ===== EXECUTING DELAYED COMBAT TRANSITION =====");
+            Log.Message("SolWorld: ===== EXECUTING COMBAT TRANSITION FROM UI CONTEXT =====");
             
             currentState = ArenaState.Combat;
             combatStartTick = Find.TickManager.TicksGame;
             combatInitiated = false;
             
-            // Use the EXACT same unpause logic as the manual button
-            AttemptUnpauseWithDelay();
-        }
-        
-        private void AttemptUnpauseWithDelay()
-        {
-            Log.Message("SolWorld: Attempting unpause using manual button logic...");
-            
-            try
+            if (currentRoster != null)
             {
-                // EXACT COPY of the manual unpause logic from ForceUnpause()
-                Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
-                
-                if (Find.TickManager.Paused)
-                {
-                    Find.TickManager.TogglePaused();
-                }
-                
-                Log.Message($"SolWorld: Unpause attempt result - Paused: {Find.TickManager.Paused}, Speed: {Find.TickManager.CurTimeSpeed}");
-                
-                // Check if we succeeded
-                bool success = !Find.TickManager.Paused && Find.TickManager.CurTimeSpeed == TimeSpeed.Normal;
-                
-                if (success)
-                {
-                    Log.Message("SolWorld: ===== DELAYED UNPAUSE SUCCESS! =====");
-                    
-                    if (currentRoster != null)
-                    {
-                        currentRoster.IsLive = true;
-                        InitiateAggressiveCombat();
-                        Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
-                    }
-                }
-                else
-                {
-                    Log.Warning("SolWorld: Delayed unpause failed - game still paused");
-                    Messages.Message("AUTO-UNPAUSE FAILED - Press SPACE manually!", MessageTypeDefOf.CautionInput);
-                    
-                    // Still start combat even if paused
-                    if (currentRoster != null)
-                    {
-                        currentRoster.IsLive = true;
-                        InitiateAggressiveCombat();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"SolWorld: Delayed unpause error: {ex.Message}");
-                Messages.Message("UNPAUSE ERROR - Press SPACE manually!", MessageTypeDefOf.RejectInput);
-                
-                // Still start combat
-                if (currentRoster != null)
-                {
-                    currentRoster.IsLive = true;
-                    InitiateAggressiveCombat();
-                }
+                currentRoster.IsLive = true;
+                InitiateAggressiveCombat();
+                Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
             }
         }
         
@@ -253,7 +190,7 @@ namespace SolWorldMod
             switch (currentState)
             {
                 case ArenaState.Preview:
-                    // Preview timing is now handled by UI layer
+                    // Preview timing is now handled by UI layer - NO automatic unpause here
                     break;
                     
                 case ArenaState.Combat:
@@ -375,8 +312,7 @@ namespace SolWorldMod
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
             previewCompleted = false;
-            combatTransitionRequested = false;
-            unpauseDelayTicks = 0;
+            uiShouldTriggerUnpause = false;
             
             if (currentRoster != null)
             {
@@ -424,8 +360,7 @@ namespace SolWorldMod
             currentState = ArenaState.Preview;
             previewStartTime = DateTime.Now; // Real-time tracking for paused preview
             previewCompleted = false;
-            combatTransitionRequested = false;
-            unpauseDelayTicks = 0;
+            uiShouldTriggerUnpause = false;
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
             
@@ -460,7 +395,7 @@ namespace SolWorldMod
                 Messages.Message("30-SECOND PREVIEW: Round " + currentRoster.MatchId + " - " + payoutText + " SOL per winner", MessageTypeDefOf.PositiveEvent);
                 
                 Log.Message("SolWorld: ===== ROUND STARTED SUCCESSFULLY =====");
-                Log.Message("SolWorld: UI will handle countdown and trigger DELAYED combat transition");
+                Log.Message("SolWorld: UI will handle countdown and trigger Arena Core unpause button automatically");
             }
             catch (Exception ex)
             {
@@ -1451,8 +1386,7 @@ namespace SolWorldMod
             combatInitiated = false;
             lastCombatEnforcementTick = -1;
             previewCompleted = false;
-            combatTransitionRequested = false;
-            unpauseDelayTicks = 0;
+            uiShouldTriggerUnpause = false;
             
             ScheduleNextRound(); // Schedule next round in 5 minutes
             
@@ -1597,14 +1531,14 @@ namespace SolWorldMod
             return pawnTeamMap.TryGetValue(pawn, out var team) ? team : (TeamColor?)null;
         }
         
-        // MANUAL UNPAUSE METHOD - Can be called from UI (FIXED VERSION)
+        // MANUAL UNPAUSE METHOD - Can be called from UI (SAME context as manual button)
         public void ForceUnpause()
         {
             Log.Message("SolWorld: MANUAL FORCE UNPAUSE called!");
             
             try
             {
-                // Use the exact same logic as the delayed unpause
+                // Use the exact same logic as always
                 Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
                 
                 if (Find.TickManager.Paused)
@@ -1617,7 +1551,8 @@ namespace SolWorldMod
                 // If we're in preview mode and manual unpause, start combat immediately
                 if (currentState == ArenaState.Preview && currentRoster != null)
                 {
-                    RequestCombatTransition();
+                    // Notify MapComponent that UI triggered the unpause (from same context as manual button)
+                    OnUITriggeredUnpause();
                     Messages.Message("Manual unpause - starting combat immediately!", MessageTypeDefOf.PositiveEvent);
                 }
             }
