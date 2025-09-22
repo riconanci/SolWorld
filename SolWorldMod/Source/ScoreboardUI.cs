@@ -29,7 +29,7 @@ namespace SolWorldMod
             
             var roster = arenaComp.CurrentRoster;
             
-            // MAIN DISPLAY: Choose display mode based on state
+            // MAIN DISPLAY: Choose display mode based on state and persistent winner data
             if (ShouldShowWinnerCelebration(arenaComp, roster))
             {
                 DrawWinnerCelebration(arenaComp, roster);
@@ -40,28 +40,27 @@ namespace SolWorldMod
             }
         }
         
-        // NEW: Determine if we should show winner celebration
+        // UPDATED: Use persistent winner storage instead of roster
         private static bool ShouldShowWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
             // Show winner celebration during the first 2 minutes of idle time after a round
             if (arenaComp.CurrentState == ArenaState.Idle && 
-                roster?.Winner.HasValue == true)
+                arenaComp.LastRoundWinner.HasValue) // CHANGED: Use persistent storage
             {
                 var timeUntilNext = arenaComp.GetTimeUntilNextRound();
                 
-                // FIXED: Show winners for first 2 minutes (when timeUntilNext > 60)
-                // At start: timeUntilNext = 180 (show winners)
-                // At 2min: timeUntilNext = 60 (stop showing winners)
+                // Show winners for first 2 minutes (when timeUntilNext > 60)
                 return timeUntilNext > 60;
             }
             
             return false;
         }
         
-        // NEW: Winner celebration display
+        // UPDATED: Use persistent winner storage instead of roster
         private static void DrawWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
-            if (roster?.Winner == null) return;
+            // CHANGED: Use persistent winner storage instead of roster
+            if (!arenaComp.LastRoundWinner.HasValue) return;
             
             // Calculate dimensions for winner display
             var totalWidth = 800f; // Wider for winner celebration
@@ -78,7 +77,7 @@ namespace SolWorldMod
             GUI.DrawTexture(rect, BaseContent.WhiteTex);
             
             // Winner-themed border
-            var winnerColor = roster.Winner == TeamColor.Red ? Color.red : Color.blue;
+            var winnerColor = arenaComp.LastRoundWinner == TeamColor.Red ? Color.red : Color.blue;
             GUI.color = winnerColor;
             Widgets.DrawBox(rect, 4); // Thicker border for celebration
             GUI.color = oldColor;
@@ -86,14 +85,14 @@ namespace SolWorldMod
             var innerRect = rect.ContractedBy(25f);
             float y = innerRect.y;
             
-            // CELEBRATION HEADER
-            DrawWinnerHeader(roster, innerRect, ref y, winnerColor);
+            // CELEBRATION HEADER (using persistent storage)
+            DrawWinnerHeaderPersistent(arenaComp, innerRect, ref y, winnerColor);
             
             // WINNER COUNTDOWN (always visible)
             DrawWinnerCountdown(arenaComp, innerRect, ref y);
             
-            // WINNING WALLETS LIST
-            DrawWinningWallets(roster, innerRect, y, winnerColor);
+            // WINNING WALLETS LIST (using persistent storage)
+            DrawWinningWalletsPersistent(arenaComp, innerRect, y, winnerColor);
             
             // Reset styling
             GUI.color = Color.white;
@@ -101,14 +100,15 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        private static void DrawWinnerHeader(RoundRoster roster, Rect innerRect, ref float y, Color winnerColor)
+        // NEW: Draw winner header using persistent storage
+        private static void DrawWinnerHeaderPersistent(MapComponent_SolWorldArena arenaComp, Rect innerRect, ref float y, Color winnerColor)
         {
             // Main celebration title
             GUI.color = Color.yellow;
             Text.Font = GameFont.Medium; // FIXED: Use GameFont.Medium instead of Large
             Text.Anchor = TextAnchor.MiddleCenter;
             
-            var titleText = $"🏆 {roster.Winner.ToString().ToUpper()} TEAM WINS! 🏆";
+            var titleText = $"🏆 {arenaComp.LastRoundWinner.ToString().ToUpper()} TEAM WINS! 🏆";
             var titleRect = new Rect(innerRect.x, y, innerRect.width, 40f);
             
             // Flashing effect for celebration
@@ -122,16 +122,17 @@ namespace SolWorldMod
             Text.Font = GameFont.Medium;
             GUI.color = Color.white;
             
-            var prizeText = $"Each Winner Receives: {roster.PerWinnerPayout:F3} SOL";
+            var prizeText = $"Each Winner Receives: {arenaComp.LastPerWinnerPayout:F3} SOL";
             var prizeRect = new Rect(innerRect.x, y, innerRect.width, 30f);
             Widgets.Label(prizeRect, prizeText);
             y += 35f;
             
-            // Pool information
+            // Pool information (calculate from winner payout)
             Text.Font = GameFont.Small;
             GUI.color = Color.cyan;
             
-            var poolText = $"Total Prize Pool: {roster.RoundRewardTotalSol:F2} SOL | Winners Share: {roster.PayoutPercent:P0}";
+            var totalPool = arenaComp.LastPerWinnerPayout * 10f / 0.20f; // Reverse calculate pool
+            var poolText = $"Total Prize Pool: {totalPool:F2} SOL | Match: {arenaComp.LastMatchId}";
             var poolRect = new Rect(innerRect.x, y, innerRect.width, 25f);
             Widgets.Label(poolRect, poolText);
             y += 30f;
@@ -157,9 +158,10 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        private static void DrawWinningWallets(RoundRoster roster, Rect innerRect, float startY, Color winnerColor)
+        // NEW: Draw winning wallets using persistent storage
+        private static void DrawWinningWalletsPersistent(MapComponent_SolWorldArena arenaComp, Rect innerRect, float startY, Color winnerColor)
         {
-            var winningTeam = roster.GetWinningTeam();
+            var winningTeam = arenaComp.LastWinningTeam;
             if (winningTeam == null || winningTeam.Count == 0) return;
             
             // Section header
@@ -172,11 +174,11 @@ namespace SolWorldMod
             Widgets.Label(headerRect, headerText);
             startY += 35f;
             
-            // Wallet list configuration
-            const float walletBoxWidth = 250f; // Wider boxes for 2 columns
+            // UPDATED: 2 columns layout
+            const float walletBoxWidth = 250f; // Wider for 2 columns
             const float walletBoxHeight = 30f;
-            const float walletSpacing = 10f; // More spacing between boxes
-            const int walletsPerRow = 2; // CHANGED: 2 columns instead of 3
+            const float walletSpacing = 10f;
+            const int walletsPerRow = 2; // 2 columns of wallets
             
             var totalWalletWidth = (walletBoxWidth * walletsPerRow) + (walletSpacing * (walletsPerRow - 1));
             var walletStartX = innerRect.x + (innerRect.width - totalWalletWidth) / 2f;
@@ -186,7 +188,7 @@ namespace SolWorldMod
             {
                 var fighter = winningTeam[i];
                 
-                // Calculate position (3 columns)
+                // Calculate position (2 columns, 5 rows)
                 var row = i / walletsPerRow;
                 var col = i % walletsPerRow;
                 

@@ -23,7 +23,7 @@ namespace SolWorldMod
             listingStandard.Begin(inRect);
 
             // Header
-            listingStandard.Label("SolWorld Arena - Backend Configuration");
+            listingStandard.Label("SolWorld Arena - Configuration");
             listingStandard.Gap();
 
             // API Base URL
@@ -49,6 +49,39 @@ namespace SolWorldMod
             // Round Pool Amount
             listingStandard.Label("Round Pool Amount (SOL): " + Settings.roundPoolSol.ToString("F2"));
             Settings.roundPoolSol = listingStandard.Slider(Settings.roundPoolSol, 0.1f, 10.0f);
+            listingStandard.Gap();
+
+            // NEW: Combat Loadout Configuration
+            listingStandard.Gap();
+            listingStandard.Label("Combat Loadout Configuration:");
+            listingStandard.Gap(4f);
+
+            // Loadout preset selection
+            var currentPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
+            listingStandard.Label("Loadout Preset: " + currentPreset.Name);
+
+            if (listingStandard.ButtonText("< " + currentPreset.Name + " >"))
+            {
+                // Cycle through presets
+                Settings.selectedLoadoutPreset = (Settings.selectedLoadoutPreset + 1) % LoadoutManager.AVAILABLE_PRESETS.Length;
+            }
+
+            // Show preset description and breakdown
+            var selectedPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
+            listingStandard.Label("Description: " + selectedPreset.Description, -1f);
+            listingStandard.Gap(4f);
+
+            listingStandard.Label("Weapon Distribution (per team):");
+            if (selectedPreset.Weapons != null)
+            {
+                foreach (var weapon in selectedPreset.Weapons)
+                {
+                    listingStandard.Label("• " + weapon.Count + "x " + weapon.Description);
+                }
+            }
+
+            listingStandard.Gap(4f);
+            listingStandard.Label("Both teams receive identical weapon loadouts for fair combat.", -1f);
             listingStandard.Gap();
 
             // Read-only timing display

@@ -30,7 +30,7 @@ namespace SolWorldMod
         private const int RESET_DELAY_TICKS = 180; // 3 seconds to show results
         private const int CADENCE_TICKS = 180 * 60; // 3 minutes between rounds
 
-        // ADD THESE NEW FIELDS HERE: 👇
+        // WINNER STORAGE - Persistent winner data for UI celebration
         private TeamColor? lastRoundWinner = null;
         private string lastMatchId = "";
         private List<Fighter> lastWinningTeam = new List<Fighter>();
@@ -54,7 +54,7 @@ namespace SolWorldMod
         private int lastAggressiveEnforcementTick = -1;
         private Dictionary<Pawn, int> pawnLastActionTick = new Dictionary<Pawn, int>();
         
-        // ARENA RESET COMPONENTS - NEW
+        // ARENA RESET COMPONENTS
         private ArenaBounds arenaBounds;
         private ArenaBlueprint arenaBlueprint;
         private ArenaReset arenaReset;
@@ -76,6 +76,12 @@ namespace SolWorldMod
                 return arenaCore?.IsOperational == true && redSpawner != null && blueSpawner != null;
             }
         }
+        
+        // WINNER STORAGE PROPERTIES - For UI access to persistent winner data
+        public TeamColor? LastRoundWinner => lastRoundWinner;
+        public string LastMatchId => lastMatchId;
+        public List<Fighter> LastWinningTeam => lastWinningTeam;
+        public float LastPerWinnerPayout => lastPerWinnerPayout;
         
         // Preview timing accessors for UI
         public DateTime PreviewStartTime => previewStartTime;
@@ -122,9 +128,16 @@ namespace SolWorldMod
             Scribe_Collections.Look(ref redTeamPawns, "redTeamPawns", LookMode.Reference);
             Scribe_Collections.Look(ref blueTeamPawns, "blueTeamPawns", LookMode.Reference);
             
+            // WINNER STORAGE - Save/load winner data for persistent celebration
+            Scribe_Values.Look(ref lastRoundWinner, "lastRoundWinner");
+            Scribe_Values.Look(ref lastMatchId, "lastMatchId", "");
+            Scribe_Values.Look(ref lastPerWinnerPayout, "lastPerWinnerPayout", 0f);
+            Scribe_Collections.Look(ref lastWinningTeam, "lastWinningTeam", LookMode.Deep);
+            
             // Rebuild team map after loading
             if (redTeamPawns == null) redTeamPawns = new List<Pawn>();
             if (blueTeamPawns == null) blueTeamPawns = new List<Pawn>();
+            if (lastWinningTeam == null) lastWinningTeam = new List<Fighter>();
             
             pawnTeamMap.Clear();
             pawnLastActionTick.Clear();
@@ -535,6 +548,12 @@ namespace SolWorldMod
             uiShouldTriggerReset = false;
             pawnLastActionTick.Clear();
             
+            // Clear winner storage when stopping arena
+            lastRoundWinner = null;
+            lastMatchId = "";
+            lastWinningTeam.Clear();
+            lastPerWinnerPayout = 0f;
+            
             if (currentRoster != null)
             {
                 CleanupCurrentRound();
@@ -574,10 +593,16 @@ namespace SolWorldMod
             Log.Message("SolWorld: Next round scheduled in " + timeUntilRound.ToString("F0") + " seconds (tick " + nextRoundTick + ")");
         }
         
-        // FIXED: StartNewRound with blueprint initialization
+        // UPDATED: StartNewRound with winner storage clearing
         private void StartNewRound()
         {
             Log.Message("SolWorld: ===== STARTING NEW ROUND =====");
+            
+            // WINNER STORAGE: Clear previous winner data for fresh start
+            lastRoundWinner = null;
+            lastMatchId = "";
+            lastWinningTeam.Clear();
+            lastPerWinnerPayout = 0f;
             
             currentState = ArenaState.Preview;
             previewStartTime = DateTime.Now;
@@ -755,9 +780,18 @@ namespace SolWorldMod
             Log.Message($"SolWorld: Verification - Red spawned: {redSpawned}/10, Blue spawned: {blueSpawned}/10");
         }
         
+            // REPLACE the existing SpawnTeam() method in MapComponent_SolWorldArena.cs with this:
+
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, TeamColor teamColor, Faction teamFaction)
         {
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
+            
+            // Get balanced loadouts for both teams
+            var loadoutPreset = LoadoutManager.GetPreset(SolWorldMod.Settings.selectedLoadoutPreset);
+            var (redWeapons, blueWeapons) = LoadoutManager.GenerateBalancedLoadouts(loadoutPreset);
+            
+            // Select appropriate weapon array for this team
+            var teamWeapons = teamColor == TeamColor.Red ? redWeapons : blueWeapons;
             
             for (int i = 0; i < fighters.Count; i++)
             {
@@ -775,6 +809,17 @@ namespace SolWorldMod
                     {
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
+                        
+                        // UPDATED: Give specific weapon from balanced loadout
+                        if (i < teamWeapons.Length)
+                        {
+                            LoadoutManager.GiveWeaponToPawn(pawn, teamWeapons[i]);
+                        }
+                        else
+                        {
+                            // Fallback to old method if index out of range
+                            GiveWeapon(pawn);
+                        }
                         
                         // Add to team tracking
                         if (teamColor == TeamColor.Red)
@@ -1500,6 +1545,7 @@ namespace SolWorldMod
             }
         }
         
+        // UPDATED: EndRound with winner data capture
         private void EndRound(string reason)
         {
             currentState = ArenaState.Ended;
@@ -1510,10 +1556,32 @@ namespace SolWorldMod
             currentRoster.IsLive = false;
             currentRoster.Winner = currentRoster.DetermineWinner();
             
-            Log.Message("SolWorld: Round ended - " + reason + ". Winner: " + currentRoster.Winner);
+            // WINNER STORAGE: Capture winner data for persistent storage
+            if (currentRoster.Winner.HasValue)
+            {
+                lastRoundWinner = currentRoster.Winner;
+                lastMatchId = currentRoster.MatchId;
+                lastPerWinnerPayout = currentRoster.PerWinnerPayout;
+                
+                // Deep copy the winning team
+                lastWinningTeam.Clear();
+                var winningTeam = currentRoster.GetWinningTeam();
+                if (winningTeam != null)
+                {
+                    foreach (var fighter in winningTeam)
+                    {
+                        lastWinningTeam.Add(new Fighter(fighter.WalletFull, fighter.Team)
+                        {
+                            Kills = fighter.Kills,
+                            Alive = fighter.Alive
+                        });
+                    }
+                }
+                
+                Log.Message($"SolWorld: Captured winner data - {lastRoundWinner} team, {lastWinningTeam.Count} winners, {lastPerWinnerPayout:F3} SOL each");
+            }
             
-            // CRITICAL: Don't cleanup roster immediately - keep it for UI display
-            // The reset phase will handle cleanup after showing results
+            Log.Message("SolWorld: Round ended - " + reason + ". Winner: " + currentRoster.Winner);
             
             // TODO: Report to backend and get real txids
             var mockTxids = new string[] { "MockTx1", "MockTx2" };
