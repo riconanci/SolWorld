@@ -9,85 +9,145 @@ namespace SolWorldMod
 {
     public static class LoadoutManager
     {
-        // CONFIGURABLE LOADOUT PRESETS
+        // CUSTOM LOADOUT PRESETS - Feel free to modify these!
         public static readonly LoadoutPreset[] AVAILABLE_PRESETS = new LoadoutPreset[]
         {
-            // PRESET 1: Mixed Combat (default)
+            // PRESET 1: Assault Squad
             new LoadoutPreset
             {
-                Name = "Mixed Combat",
-                Description = "Balanced mix of ranged and melee fighters",
+                Name = "Assault Squad",
+                Description = "Heavy assault rifles with melee backup",
                 Weapons = new WeaponLoadout[]
                 {
-                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 3, Description = "Assault Rifles" },
-                    new WeaponLoadout { DefName = "Gun_SniperRifle", Count = 2, Description = "Sniper Rifles" },
+                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 6, Description = "Assault Rifles" },
                     new WeaponLoadout { DefName = "Gun_Autopistol", Count = 2, Description = "Autopistols" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 1, Description = "Combat Knives" }
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" }
                 }
             },
 
-            // PRESET 2: Ranged Focus
+            // PRESET 2: Berserker Horde
             new LoadoutPreset
             {
-                Name = "Ranged Focus",
-                Description = "Primarily ranged combat with backup melee",
+                Name = "Berserker Horde",
+                Description = "Pure melee chaos with minimal ranged",
+                Weapons = new WeaponLoadout[]
+                {
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 5, Description = "Longswords" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 4, Description = "Combat Knives" },
+                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 1, Description = "Emergency Pistol" }
+                }
+            },
+
+            // PRESET 3: Gunslinger Duel
+            new LoadoutPreset
+            {
+                Name = "Gunslinger Duel",
+                Description = "Classic pistol showdown",
+                Weapons = new WeaponLoadout[]
+                {
+                    new WeaponLoadout { DefName = "Gun_Revolver", Count = 5, Description = "Revolvers" },
+                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 4, Description = "Autopistols" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 1, Description = "Last Resort Knife" }
+                }
+            },
+
+            // PRESET 4: Tactical Strike
+            new LoadoutPreset
+            {
+                Name = "Tactical Strike",
+                Description = "Mixed tactical combat setup",
                 Weapons = new WeaponLoadout[]
                 {
                     new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 4, Description = "Assault Rifles" },
-                    new WeaponLoadout { DefName = "Gun_SniperRifle", Count = 3, Description = "Sniper Rifles" },
-                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 2, Description = "Autopistols" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 1, Description = "Longsword" }
+                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 3, Description = "Autopistols" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 3, Description = "Longswords" }
                 }
             },
 
-            // PRESET 3: Close Combat
+            // PRESET 5: Shotgun Rush
             new LoadoutPreset
             {
-                Name = "Close Combat",
-                Description = "Melee-focused with some ranged support",
+                Name = "Shotgun Rush",
+                Description = "Close-range devastation",
                 Weapons = new WeaponLoadout[]
                 {
-                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 4, Description = "Longswords" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 3, Description = "Combat Knives" },
-                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 2, Description = "Autopistols" },
-                    new WeaponLoadout { DefName = "Gun_Revolver", Count = 1, Description = "Revolver" }
+                    new WeaponLoadout { DefName = "Gun_PumpShotgun", Count = 4, Description = "Pump Shotguns" },
+                    new WeaponLoadout { DefName = "Gun_ChainShotgun", Count = 2, Description = "Chain Shotguns" },
+                    new WeaponLoadout { DefName = "Gun_Revolver", Count = 2, Description = "Revolvers" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" }
                 }
             },
 
-            // PRESET 4: Elite Warriors
+            // PRESET 6: Medieval Warriors (NEW - Pure melee)
             new LoadoutPreset
             {
-                Name = "Elite Warriors",
-                Description = "High-tier weapons for experienced fighters",
+                Name = "Medieval Warriors",
+                Description = "Pure blade combat - no ranged weapons",
                 Weapons = new WeaponLoadout[]
                 {
-                    new WeaponLoadout { DefName = "Gun_ChargeRifle", Count = 3, Description = "Charge Rifles" },
-                    new WeaponLoadout { DefName = "Gun_SniperRifle", Count = 2, Description = "Sniper Rifles" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_Plasteel_LongSword", Count = 3, Description = "Plasteel Swords" },
-                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 2, Description = "Assault Rifles" }
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 6, Description = "Longswords" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 4, Description = "Combat Knives" }
                 }
             },
 
-            // PRESET 5: Pistols & Blades
+            // PRESET 7: Grenadier Squad (NEW - One grenadier per team)
             new LoadoutPreset
             {
-                Name = "Pistols & Blades",
-                Description = "Classic dueling setup",
+                Name = "Grenadier Squad",
+                Description = "Explosive warfare with one grenadier per team",
                 Weapons = new WeaponLoadout[]
                 {
-                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 4, Description = "Autopistols" },
-                    new WeaponLoadout { DefName = "Gun_Revolver", Count = 3, Description = "Revolvers" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 2, Description = "Combat Knives" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 1, Description = "Longsword" }
+                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 4, Description = "Assault Rifles" },
+                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 3, Description = "Autopistols" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" },
+                    new WeaponLoadout { DefName = "Gun_GrenadeLauncher", Count = 1, Description = "Frag Grenades" }
+                }
+            },
+
+            // PRESET 8: Energy Weapons
+            new LoadoutPreset
+            {
+                Name = "Energy Weapons",
+                Description = "High-tech energy combat",
+                Weapons = new WeaponLoadout[]
+                {
+                    new WeaponLoadout { DefName = "Gun_ChargeRifle", Count = 4, Description = "Charge Rifles" },
+                    new WeaponLoadout { DefName = "Gun_Autopistol", Count = 2, Description = "Backup Pistols" },
+                    new WeaponLoadout { DefName = "MeleeWeapon_Knife", Count = 4, Description = "Combat Knives" }
                 }
             }
         };
 
+        // NEW: Get random preset for variety each round
+        public static LoadoutPreset GetRandomPreset()
+        {
+            var randomIndex = Rand.Range(0, AVAILABLE_PRESETS.Length);
+            var selectedPreset = AVAILABLE_PRESETS[randomIndex];
+            Log.Message($"SolWorld: Randomly selected loadout preset '{selectedPreset.Name}' for this round");
+            return selectedPreset;
+        }
+
+        // NEW: Get random preset but exclude recently used ones
+        public static LoadoutPreset GetRandomPreset(string[] excludeNames)
+        {
+            var availablePresets = AVAILABLE_PRESETS.Where(p => !excludeNames.Contains(p.Name)).ToArray();
+            
+            if (availablePresets.Length == 0)
+            {
+                // If we've excluded everything, reset and pick from all
+                availablePresets = AVAILABLE_PRESETS;
+            }
+            
+            var randomIndex = Rand.Range(0, availablePresets.Length);
+            var selectedPreset = availablePresets[randomIndex];
+            Log.Message($"SolWorld: Randomly selected loadout preset '{selectedPreset.Name}' (excluded: {string.Join(", ", excludeNames)})");
+            return selectedPreset;
+        }
+
         public static LoadoutPreset GetPreset(int index)
         {
             if (index < 0 || index >= AVAILABLE_PRESETS.Length)
-                return AVAILABLE_PRESETS[0]; // Default to Mixed Combat
+                return AVAILABLE_PRESETS[0]; // Default to first preset
             
             return AVAILABLE_PRESETS[index];
         }
@@ -97,10 +157,25 @@ namespace SolWorldMod
             return AVAILABLE_PRESETS.FirstOrDefault(p => p.Name == name) ?? AVAILABLE_PRESETS[0];
         }
 
-        // MAIN METHOD: Generate balanced weapon assignments for both teams
-        public static (string[] redWeapons, string[] blueWeapons) GenerateBalancedLoadouts(LoadoutPreset preset)
+        // UPDATED: Generate balanced loadouts with random preset selection
+        public static (string[] redWeapons, string[] blueWeapons, LoadoutPreset usedPreset) GenerateBalancedLoadouts(bool useRandomPreset = true, LoadoutPreset specificPreset = null)
         {
-            Log.Message($"SolWorld: Generating balanced loadouts using preset '{preset.Name}'");
+            LoadoutPreset preset;
+            
+            if (useRandomPreset)
+            {
+                preset = GetRandomPreset();
+            }
+            else if (specificPreset != null)
+            {
+                preset = specificPreset;
+            }
+            else
+            {
+                preset = AVAILABLE_PRESETS[0]; // Fallback
+            }
+            
+            Log.Message($"SolWorld: Generating balanced loadouts using preset '{preset.Name}' - {preset.Description}");
 
             // Create weapon pool from preset
             var weaponPool = new List<string>();
@@ -147,7 +222,7 @@ namespace SolWorldMod
             LogLoadoutDistribution(redWeapons, "Red");
             LogLoadoutDistribution(blueWeapons, "Blue");
 
-            return (redWeapons, blueWeapons);
+            return (redWeapons, blueWeapons, preset); // Return the preset that was used
         }
 
         private static void LogLoadoutDistribution(string[] weapons, string team)

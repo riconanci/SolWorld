@@ -56,32 +56,61 @@ namespace SolWorldMod
             listingStandard.Label("Combat Loadout Configuration:");
             listingStandard.Gap(4f);
 
-            // Loadout preset selection
-            var currentPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
-            listingStandard.Label("Loadout Preset: " + currentPreset.Name);
-
-            if (listingStandard.ButtonText("< " + currentPreset.Name + " >"))
+            // Loadout preset selection with random option
+            string currentLoadoutText;
+            if (Settings.selectedLoadoutPreset == -1)
             {
-                // Cycle through presets
-                Settings.selectedLoadoutPreset = (Settings.selectedLoadoutPreset + 1) % LoadoutManager.AVAILABLE_PRESETS.Length;
+                currentLoadoutText = "🎲 Random Each Round";
+            }
+            else
+            {
+                var currentPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
+                currentLoadoutText = currentPreset.Name;
+            }
+            
+            listingStandard.Label("Loadout Mode: " + currentLoadoutText);
+
+            if (listingStandard.ButtonText("< " + currentLoadoutText + " >"))
+            {
+                // Cycle through presets: -1 (Random) -> 0 -> 1 -> 2 -> ... -> back to -1
+                Settings.selectedLoadoutPreset++;
+                if (Settings.selectedLoadoutPreset >= LoadoutManager.AVAILABLE_PRESETS.Length)
+                {
+                    Settings.selectedLoadoutPreset = -1; // Back to random
+                }
             }
 
-            // Show preset description and breakdown
-            var selectedPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
-            listingStandard.Label("Description: " + selectedPreset.Description, -1f);
-            listingStandard.Gap(4f);
-
-            listingStandard.Label("Weapon Distribution (per team):");
-            if (selectedPreset.Weapons != null)
+            // Show description based on mode
+            if (Settings.selectedLoadoutPreset == -1)
             {
-                foreach (var weapon in selectedPreset.Weapons)
+                listingStandard.Label("Description: Randomly selects a different loadout preset each round", -1f);
+                listingStandard.Gap(4f);
+                
+                listingStandard.Label("Available Presets:");
+                foreach (var preset in LoadoutManager.AVAILABLE_PRESETS)
                 {
-                    listingStandard.Label("• " + weapon.Count + "x " + weapon.Description);
+                    listingStandard.Label("• " + preset.Name + " - " + preset.Description, -1f);
+                }
+            }
+            else
+            {
+                // Show specific preset details
+                var selectedPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
+                listingStandard.Label("Description: " + selectedPreset.Description, -1f);
+                listingStandard.Gap(4f);
+
+                listingStandard.Label("Weapon Distribution (per team):");
+                if (selectedPreset.Weapons != null)
+                {
+                    foreach (var weapon in selectedPreset.Weapons)
+                    {
+                        listingStandard.Label("• " + weapon.Count + "x " + weapon.Description);
+                    }
                 }
             }
 
             listingStandard.Gap(4f);
-            listingStandard.Label("Both teams receive identical weapon loadouts for fair combat.", -1f);
+            listingStandard.Label("Both teams always receive identical weapon loadouts for fair combat.", -1f);
             listingStandard.Gap();
 
             // Read-only timing display

@@ -30,6 +30,11 @@ namespace SolWorldMod
         private const int RESET_DELAY_TICKS = 180; // 3 seconds to show results
         private const int CADENCE_TICKS = 180 * 60; // 3 minutes between rounds
 
+        // ADD THESE FIELDS with other private fields:
+        private LoadoutPreset currentRoundLoadoutPreset;
+        private string[] currentRoundRedWeapons;
+        private string[] currentRoundBlueWeapons;
+
         // WINNER STORAGE - Persistent winner data for UI celebration
         private TeamColor? lastRoundWinner = null;
         private string lastMatchId = "";
@@ -780,18 +785,56 @@ namespace SolWorldMod
             Log.Message($"SolWorld: Verification - Red spawned: {redSpawned}/10, Blue spawned: {blueSpawned}/10");
         }
         
-            // REPLACE the existing SpawnTeam() method in MapComponent_SolWorldArena.cs with this:
+        // REPLACE the existing SpawnTeam() method in MapComponent_SolWorldArena.cs with this:
 
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, TeamColor teamColor, Faction teamFaction)
         {
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
             
-            // Get balanced loadouts for both teams
-            var loadoutPreset = LoadoutManager.GetPreset(SolWorldMod.Settings.selectedLoadoutPreset);
-            var (redWeapons, blueWeapons) = LoadoutManager.GenerateBalancedLoadouts(loadoutPreset);
+            // Get balanced loadouts - use random if enabled, otherwise use selected preset
+            string[] teamWeapons;
+            LoadoutPreset usedPreset;
             
-            // Select appropriate weapon array for this team
-            var teamWeapons = teamColor == TeamColor.Red ? redWeapons : blueWeapons;
+            if (teamColor == TeamColor.Red)
+            {
+                // Red team determines the loadout for the round
+                if (SolWorldMod.Settings.UseRandomLoadouts)
+                {
+                    var (redWeapons, blueWeapons, preset) = LoadoutManager.GenerateBalancedLoadouts(useRandomPreset: true);
+                    teamWeapons = redWeapons;
+                    usedPreset = preset;
+                    
+                    // Store for blue team to use the same loadout
+                    currentRoundLoadoutPreset = preset;
+                    currentRoundRedWeapons = redWeapons;
+                    currentRoundBlueWeapons = blueWeapons;
+                }
+                else
+                {
+                    var specificPreset = LoadoutManager.GetPreset(SolWorldMod.Settings.selectedLoadoutPreset);
+                    var (redWeapons, blueWeapons, preset) = LoadoutManager.GenerateBalancedLoadouts(useRandomPreset: false, specificPreset: specificPreset);
+                    teamWeapons = redWeapons;
+                    usedPreset = preset;
+                    
+                    // Store for blue team
+                    currentRoundLoadoutPreset = preset;
+                    currentRoundRedWeapons = redWeapons;
+                    currentRoundBlueWeapons = blueWeapons;
+                }
+                
+                // Update roster with loadout info for UI display
+                if (currentRoster != null)
+                {
+                    currentRoster.LoadoutPresetName = usedPreset.Name;
+                    currentRoster.LoadoutDescription = usedPreset.Description;
+                }
+            }
+            else
+            {
+                // Blue team uses the same loadout as red team
+                teamWeapons = currentRoundBlueWeapons;
+                usedPreset = currentRoundLoadoutPreset;
+            }
             
             for (int i = 0; i < fighters.Count; i++)
             {
@@ -842,7 +885,7 @@ namespace SolWorldMod
                 }
             }
         }
-        
+     
         // FIXED: Pawn generation to avoid cast errors
         private Pawn GenerateWarrior(Fighter fighter, TeamColor teamColor, Faction teamFaction)
         {

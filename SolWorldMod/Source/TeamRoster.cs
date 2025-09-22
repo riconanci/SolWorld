@@ -107,6 +107,10 @@ namespace SolWorldMod
         private bool isLive = false;
         private TeamColor? winner = null;
         
+        // NEW: Loadout information fields
+        private string loadoutPresetName = "";
+        private string loadoutDescription = "";
+        
         public string MatchId 
         { 
             get { return matchId; } 
@@ -161,6 +165,19 @@ namespace SolWorldMod
             set { winner = value; } 
         }
         
+        // NEW: Loadout information properties
+        public string LoadoutPresetName 
+        { 
+            get { return loadoutPresetName; } 
+            set { loadoutPresetName = value; } 
+        }
+        
+        public string LoadoutDescription 
+        { 
+            get { return loadoutDescription; } 
+            set { loadoutDescription = value; } 
+        }
+        
         // Live counters - use LINQ (available in RimWorld 1.6)
         public int RedAlive 
         { 
@@ -198,6 +215,8 @@ namespace SolWorldMod
             payoutPercent = 0.20f;
             isLive = false;
             winner = null;
+            loadoutPresetName = "";
+            loadoutDescription = "";
         }
         
         private string GenerateMatchId()
@@ -240,6 +259,10 @@ namespace SolWorldMod
             Scribe_Values.Look(ref payoutPercent, "payoutPercent", 0.20f);
             Scribe_Values.Look(ref isLive, "isLive", false);
             Scribe_Values.Look(ref winner, "winner");
+            
+            // NEW: Save/load loadout information
+            Scribe_Values.Look(ref loadoutPresetName, "loadoutPresetName", "");
+            Scribe_Values.Look(ref loadoutDescription, "loadoutDescription", "");
             
             // Initialize lists if null after loading
             if (red == null) red = new List<Fighter>();

@@ -11,7 +11,7 @@ namespace SolWorldMod
         private string tokenMintField = "";
         private float payoutPercentField = 0.20f;
         private float roundPoolSolField = 1.0f;
-        private int selectedLoadoutPresetField = 0; // NEW: Loadout preset selection
+        private int selectedLoadoutPresetField = -1; // NEW: -1 = Random, 0+ = specific preset
         
         // Backend Configuration
         public string apiBaseUrl 
@@ -52,6 +52,12 @@ namespace SolWorldMod
             set { selectedLoadoutPresetField = value; } 
         }
         
+        // Helper property for UI
+        public bool UseRandomLoadouts 
+        { 
+            get { return selectedLoadoutPresetField == -1; } 
+        }
+        
         // Fixed timing constants (not configurable via UI)
         public const int CADENCE_SECONDS = 300;     // 5 minutes
         public const int PREVIEW_SECONDS = 30;      // 30 seconds
@@ -80,7 +86,7 @@ namespace SolWorldMod
             Scribe_Values.Look(ref tokenMintField, "tokenMint", "");
             Scribe_Values.Look(ref payoutPercentField, "payoutPercent", 0.20f);
             Scribe_Values.Look(ref roundPoolSolField, "roundPoolSol", 1.0f);
-            Scribe_Values.Look(ref selectedLoadoutPresetField, "selectedLoadoutPreset", 0); // NEW: Save loadout setting
+            Scribe_Values.Look(ref selectedLoadoutPresetField, "selectedLoadoutPreset", -1); // NEW: Default to random
             base.ExposeData();
         }
     }

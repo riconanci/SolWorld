@@ -334,7 +334,15 @@ namespace SolWorldMod
                 GUI.color = Color.white;
                 var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
                 Text.Anchor = TextAnchor.MiddleCenter;
-                var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
+                
+                // Show loadout info if available
+                var loadoutInfo = "";
+                if (!string.IsNullOrEmpty(roster.LoadoutPresetName))
+                {
+                    loadoutInfo = $" | Loadout: {roster.LoadoutPresetName}";
+                }
+                
+                var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL{loadoutInfo}";
                 Widgets.Label(matchInfoRect, matchText);
                 Text.Anchor = TextAnchor.UpperLeft;
                 y += lineHeight + 10f;
