@@ -48,11 +48,11 @@ namespace SolWorldMod
                 roster?.Winner.HasValue == true)
             {
                 var timeUntilNext = arenaComp.GetTimeUntilNextRound();
-                var totalIdleTime = 180; // 3 minutes total
-                var winnerDisplayTime = 120; // Show winners for 2 minutes
                 
-                // Show winners for first 2 minutes (180-60 = 120 seconds remaining)
-                return timeUntilNext > (totalIdleTime - winnerDisplayTime);
+                // FIXED: Show winners for first 2 minutes (when timeUntilNext > 60)
+                // At start: timeUntilNext = 180 (show winners)
+                // At 2min: timeUntilNext = 60 (stop showing winners)
+                return timeUntilNext > 60;
             }
             
             return false;
@@ -173,10 +173,10 @@ namespace SolWorldMod
             startY += 35f;
             
             // Wallet list configuration
-            const float walletBoxWidth = 200f;
+            const float walletBoxWidth = 250f; // Wider boxes for 2 columns
             const float walletBoxHeight = 30f;
-            const float walletSpacing = 5f;
-            const int walletsPerRow = 3; // 3 columns of wallets
+            const float walletSpacing = 10f; // More spacing between boxes
+            const int walletsPerRow = 2; // CHANGED: 2 columns instead of 3
             
             var totalWalletWidth = (walletBoxWidth * walletsPerRow) + (walletSpacing * (walletsPerRow - 1));
             var walletStartX = innerRect.x + (innerRect.width - totalWalletWidth) / 2f;
@@ -289,7 +289,7 @@ namespace SolWorldMod
             
             // Calculate total dimensions
             var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f);
-            var totalHeight = roster != null ? 240f : 180f; // Smaller when no roster
+            var totalHeight = roster != null ? 210f : 180f; // REDUCED: From 280f to 240f
             
             var centerX = UI.screenWidth / 2f;
             var topY = 15f;

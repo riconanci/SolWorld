@@ -29,6 +29,12 @@ namespace SolWorldMod
         private const int COMBAT_TICKS = 90 * 60; // 1.5 minutes (90 seconds) game time
         private const int RESET_DELAY_TICKS = 180; // 3 seconds to show results
         private const int CADENCE_TICKS = 180 * 60; // 3 minutes between rounds
+
+        // ADD THESE NEW FIELDS HERE: 👇
+        private TeamColor? lastRoundWinner = null;
+        private string lastMatchId = "";
+        private List<Fighter> lastWinningTeam = new List<Fighter>();
+        private float lastPerWinnerPayout = 0f;
         
         // Team management - use existing factions
         private Faction redTeamFaction;
