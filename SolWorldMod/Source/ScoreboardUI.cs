@@ -18,8 +18,8 @@ namespace SolWorldMod
             
             var arenaComp = map.GetComponent<MapComponent_SolWorldArena>();
             
-            // FIXED: ALWAYS show scoreboard when arena is active, even during round end phases
-            if (arenaComp?.IsActive != true)
+            // FIXED: ALWAYS show scoreboard when arena is active OR has roster data
+            if (arenaComp?.IsActive != true && arenaComp?.CurrentRoster == null)
                 return;
             
             // Handle phase-specific countdown logic
@@ -27,11 +27,359 @@ namespace SolWorldMod
             HandleCombatCountdown(arenaComp);
             HandleNextRoundCountdown(arenaComp);
             
-            // FIXED: Show scoreboard even when roster is null (during transitions)
             var roster = arenaComp.CurrentRoster;
             
-            // MAIN DISPLAY: Extended center leaderboard that includes pawn squares
-            DrawExtendedLeaderboard(arenaComp, roster);
+            // MAIN DISPLAY: Choose display mode based on state
+            if (ShouldShowWinnerCelebration(arenaComp, roster))
+            {
+                DrawWinnerCelebration(arenaComp, roster);
+            }
+            else
+            {
+                DrawStandardLeaderboard(arenaComp, roster);
+            }
+        }
+        
+        // NEW: Determine if we should show winner celebration
+        private static bool ShouldShowWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
+        {
+            // Show winner celebration during the first 2 minutes of idle time after a round
+            if (arenaComp.CurrentState == ArenaState.Idle && 
+                roster?.Winner.HasValue == true)
+            {
+                var timeUntilNext = arenaComp.GetTimeUntilNextRound();
+                var totalIdleTime = 180; // 3 minutes total
+                var winnerDisplayTime = 120; // Show winners for 2 minutes
+                
+                // Show winners for first 2 minutes (180-60 = 120 seconds remaining)
+                return timeUntilNext > (totalIdleTime - winnerDisplayTime);
+            }
+            
+            return false;
+        }
+        
+        // NEW: Winner celebration display
+        private static void DrawWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
+        {
+            if (roster?.Winner == null) return;
+            
+            // Calculate dimensions for winner display
+            var totalWidth = 800f; // Wider for winner celebration
+            var totalHeight = 500f; // Taller for winner list
+            
+            var centerX = UI.screenWidth / 2f;
+            var topY = 15f;
+            
+            var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
+            
+            // Enhanced celebration background
+            var oldColor = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.95f); // More opaque for celebration
+            GUI.DrawTexture(rect, BaseContent.WhiteTex);
+            
+            // Winner-themed border
+            var winnerColor = roster.Winner == TeamColor.Red ? Color.red : Color.blue;
+            GUI.color = winnerColor;
+            Widgets.DrawBox(rect, 4); // Thicker border for celebration
+            GUI.color = oldColor;
+            
+            var innerRect = rect.ContractedBy(25f);
+            float y = innerRect.y;
+            
+            // CELEBRATION HEADER
+            DrawWinnerHeader(roster, innerRect, ref y, winnerColor);
+            
+            // WINNER COUNTDOWN (always visible)
+            DrawWinnerCountdown(arenaComp, innerRect, ref y);
+            
+            // WINNING WALLETS LIST
+            DrawWinningWallets(roster, innerRect, y, winnerColor);
+            
+            // Reset styling
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.UpperLeft;
+        }
+        
+        private static void DrawWinnerHeader(RoundRoster roster, Rect innerRect, ref float y, Color winnerColor)
+        {
+            // Main celebration title
+            GUI.color = Color.yellow;
+            Text.Font = GameFont.Medium; // FIXED: Use GameFont.Medium instead of Large
+            Text.Anchor = TextAnchor.MiddleCenter;
+            
+            var titleText = $"🏆 {roster.Winner.ToString().ToUpper()} TEAM WINS! 🏆";
+            var titleRect = new Rect(innerRect.x, y, innerRect.width, 40f);
+            
+            // Flashing effect for celebration
+            var flash = Mathf.Sin(Time.realtimeSinceStartup * 6f) > 0f;
+            GUI.color = flash ? Color.yellow : winnerColor;
+            
+            Widgets.Label(titleRect, titleText);
+            y += 45f;
+            
+            // Prize information
+            Text.Font = GameFont.Medium;
+            GUI.color = Color.white;
+            
+            var prizeText = $"Each Winner Receives: {roster.PerWinnerPayout:F3} SOL";
+            var prizeRect = new Rect(innerRect.x, y, innerRect.width, 30f);
+            Widgets.Label(prizeRect, prizeText);
+            y += 35f;
+            
+            // Pool information
+            Text.Font = GameFont.Small;
+            GUI.color = Color.cyan;
+            
+            var poolText = $"Total Prize Pool: {roster.RoundRewardTotalSol:F2} SOL | Winners Share: {roster.PayoutPercent:P0}";
+            var poolRect = new Rect(innerRect.x, y, innerRect.width, 25f);
+            Widgets.Label(poolRect, poolText);
+            y += 30f;
+            
+            Text.Anchor = TextAnchor.UpperLeft;
+        }
+        
+        private static void DrawWinnerCountdown(MapComponent_SolWorldArena arenaComp, Rect innerRect, ref float y)
+        {
+            var timeUntilNext = arenaComp.GetTimeUntilNextRound();
+            var minutes = timeUntilNext / 60;
+            var seconds = timeUntilNext % 60;
+            
+            Text.Font = GameFont.Medium;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            GUI.color = Color.green;
+            
+            var countdownText = $"⏰ Next Round: {minutes:F0}:{seconds:D2}";
+            var countdownRect = new Rect(innerRect.x, y, innerRect.width, 30f);
+            Widgets.Label(countdownRect, countdownText);
+            y += 40f;
+            
+            Text.Anchor = TextAnchor.UpperLeft;
+        }
+        
+        private static void DrawWinningWallets(RoundRoster roster, Rect innerRect, float startY, Color winnerColor)
+        {
+            var winningTeam = roster.GetWinningTeam();
+            if (winningTeam == null || winningTeam.Count == 0) return;
+            
+            // Section header
+            Text.Font = GameFont.Medium;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            GUI.color = winnerColor;
+            
+            var headerText = $"WINNING WALLETS ({winningTeam.Count}):";
+            var headerRect = new Rect(innerRect.x, startY, innerRect.width, 25f);
+            Widgets.Label(headerRect, headerText);
+            startY += 35f;
+            
+            // Wallet list configuration
+            const float walletBoxWidth = 200f;
+            const float walletBoxHeight = 30f;
+            const float walletSpacing = 5f;
+            const int walletsPerRow = 3; // 3 columns of wallets
+            
+            var totalWalletWidth = (walletBoxWidth * walletsPerRow) + (walletSpacing * (walletsPerRow - 1));
+            var walletStartX = innerRect.x + (innerRect.width - totalWalletWidth) / 2f;
+            
+            // Draw each winning wallet
+            for (int i = 0; i < winningTeam.Count; i++)
+            {
+                var fighter = winningTeam[i];
+                
+                // Calculate position (3 columns)
+                var row = i / walletsPerRow;
+                var col = i % walletsPerRow;
+                
+                var walletX = walletStartX + col * (walletBoxWidth + walletSpacing);
+                var walletY = startY + row * (walletBoxHeight + walletSpacing);
+                
+                var walletRect = new Rect(walletX, walletY, walletBoxWidth, walletBoxHeight);
+                
+                DrawWinnerWalletBox(walletRect, fighter, winnerColor);
+            }
+        }
+        
+        private static void DrawWinnerWalletBox(Rect rect, Fighter fighter, Color teamColor)
+        {
+            try
+            {
+                var oldColor = GUI.color;
+                
+                // Winner box background
+                GUI.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.3f);
+                GUI.DrawTexture(rect, BaseContent.WhiteTex);
+                
+                // Winner box border
+                GUI.color = teamColor;
+                Widgets.DrawBox(rect, 2);
+                
+                // Trophy icon area
+                var trophyRect = new Rect(rect.x + 5f, rect.y + 5f, 20f, 20f);
+                GUI.color = Color.yellow;
+                GUI.DrawTexture(trophyRect, BaseContent.WhiteTex);
+                
+                // Draw trophy emoji text
+                GUI.color = Color.black;
+                Text.Font = GameFont.Tiny;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Widgets.Label(trophyRect, "🏆");
+                
+                // Wallet address (last 6 characters)
+                var walletText = "..." + GetLast6Characters(fighter.WalletShort);
+                var walletRect = new Rect(rect.x + 30f, rect.y + 5f, rect.width - 35f, rect.height - 10f);
+                
+                GUI.color = Color.white;
+                Text.Font = GameFont.Small;
+                Text.Anchor = TextAnchor.MiddleLeft;
+                Widgets.Label(walletRect, walletText);
+                
+                // Enhanced tooltip for winners
+                if (Mouse.IsOver(rect))
+                {
+                    var tooltip = BuildWinnerTooltip(fighter);
+                    TooltipHandler.TipRegion(rect, tooltip);
+                }
+                
+                GUI.color = oldColor;
+                Text.Anchor = TextAnchor.UpperLeft;
+            }
+            catch (System.Exception ex)
+            {
+                if (Prefs.DevMode)
+                {
+                    Log.Warning($"SolWorld: Winner wallet box draw error: {ex.Message}");
+                }
+            }
+        }
+        
+        private static string GetLast6Characters(string wallet)
+        {
+            if (string.IsNullOrEmpty(wallet) || wallet.Length <= 6)
+                return wallet;
+            
+            return wallet.Substring(wallet.Length - 6);
+        }
+        
+        private static string BuildWinnerTooltip(Fighter fighter)
+        {
+            var tooltip = $"🏆 WINNER! 🏆\n";
+            tooltip += $"Wallet: {fighter.WalletFull}\n";
+            tooltip += $"Team: {fighter.Team}\n";
+            tooltip += $"Final Kills: {fighter.Kills}\n";
+            tooltip += $"Status: VICTORIOUS";
+            
+            return tooltip;
+        }
+        
+        // STANDARD LEADERBOARD (used for all non-winner phases)
+        private static void DrawStandardLeaderboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
+        {
+            // Calculate dimensions based on whether we have a roster
+            const float pawnBoxSize = 56f;
+            const float pawnBoxSpacing = 6f;
+            const float teamSeparation = 80f;
+            
+            float pawnAreaWidth = 600f; // Default width when no roster
+            if (roster != null)
+            {
+                var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
+                var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
+                pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
+            }
+            
+            // Calculate total dimensions
+            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f);
+            var totalHeight = roster != null ? 240f : 180f; // Smaller when no roster
+            
+            var centerX = UI.screenWidth / 2f;
+            var topY = 15f;
+            
+            var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
+            
+            // Standard background
+            var oldColor = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.9f);
+            GUI.DrawTexture(rect, BaseContent.WhiteTex);
+            
+            // Standard border
+            GUI.color = Color.white;
+            Widgets.DrawBox(rect, 3);
+            GUI.color = oldColor;
+            
+            var innerRect = rect.ContractedBy(20f);
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.UpperLeft;
+            
+            float y = innerRect.y;
+            float lineHeight = 24f;
+            
+            // Standard header
+            GUI.color = Color.yellow;
+            Text.Font = GameFont.Medium;
+            var headerRect = new Rect(innerRect.x, y, innerRect.width, 32f);
+            Text.Anchor = TextAnchor.MiddleCenter;
+            Widgets.Label(headerRect, "SolWorld Arena - Live Combat Dashboard");
+            Text.Anchor = TextAnchor.UpperLeft;
+            y += 36f;
+            
+            // MAIN TIMER DISPLAY
+            DrawMainTimer(arenaComp, roster, innerRect, ref y);
+            
+            // Match info only if we have a roster
+            if (roster != null)
+            {
+                Text.Font = GameFont.Small;
+                GUI.color = Color.white;
+                var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
+                Widgets.Label(matchInfoRect, matchText);
+                Text.Anchor = TextAnchor.UpperLeft;
+                y += lineHeight + 10f;
+                
+                // Team displays
+                DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
+            }
+            else
+            {
+                // Show arena status when no active roster
+                Text.Font = GameFont.Small;
+                GUI.color = Color.cyan;
+                var statusRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
+                Text.Anchor = TextAnchor.MiddleCenter;
+                
+                string statusText = "Arena Active - Waiting for fighters...";
+                switch (arenaComp.CurrentState)
+                {
+                    case ArenaState.Idle:
+                        var nextRoundTime = arenaComp.GetTimeUntilNextRound();
+                        if (nextRoundTime > 0)
+                        {
+                            var minutes = nextRoundTime / 60;
+                            var seconds = nextRoundTime % 60;
+                            statusText = $"⏰ NEXT ROUND: {minutes:F0}:{seconds:D2}";
+                        }
+                        else
+                        {
+                            statusText = "✅ STARTING NEW ROUND...";
+                        }
+                        break;
+                    case ArenaState.Resetting:
+                        statusText = "⚙️ RESETTING ARENA...";
+                        break;
+                    case ArenaState.Ended:
+                        statusText = "🏆 ROUND COMPLETE - PREPARING RESET...";
+                        break;
+                }
+                
+                Widgets.Label(statusRect, statusText);
+                Text.Anchor = TextAnchor.UpperLeft;
+            }
+            
+            // Reset styling
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.UpperLeft;
         }
         
         // CRITICAL: Handle preview countdown that works during pause
@@ -101,118 +449,7 @@ namespace SolWorldMod
             }
         }
         
-        // FIXED: Extended leaderboard that stays visible even when roster is null
-        private static void DrawExtendedLeaderboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
-        {
-            // Calculate dimensions based on whether we have a roster
-            const float pawnBoxSize = 56f;
-            const float pawnBoxSpacing = 6f;
-            const float teamSeparation = 80f;
-            
-            float pawnAreaWidth = 600f; // Default width when no roster
-            if (roster != null)
-            {
-                var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
-                var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
-                pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
-            }
-            
-            // Calculate total dimensions - leaderboard now encompasses pawn squares
-            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f);
-            var totalHeight = roster != null ? 280f : 180f; // Smaller when no roster
-            
-            var centerX = UI.screenWidth / 2f;
-            var topY = 15f; // Very top of screen
-            
-            var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
-            
-            // Enhanced semi-transparent background
-            var oldColor = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.9f);
-            GUI.DrawTexture(rect, BaseContent.WhiteTex);
-            
-            // Border for better definition
-            GUI.color = Color.white;
-            Widgets.DrawBox(rect, 3);
-            GUI.color = oldColor;
-            
-            var innerRect = rect.ContractedBy(20f);
-            Text.Font = GameFont.Small;
-            Text.Anchor = TextAnchor.UpperLeft;
-            
-            float y = innerRect.y;
-            float lineHeight = 24f;
-            
-            // Header with enhanced styling
-            GUI.color = Color.yellow;
-            Text.Font = GameFont.Medium;
-            var headerRect = new Rect(innerRect.x, y, innerRect.width, 32f);
-            Text.Anchor = TextAnchor.MiddleCenter;
-            Widgets.Label(headerRect, "SolWorld Arena - Live Combat Dashboard");
-            Text.Anchor = TextAnchor.UpperLeft;
-            y += 36f;
-            
-            // MAIN TIMER DISPLAY - Shows different content based on phase
-            DrawMainTimer(arenaComp, roster, innerRect, ref y);
-            
-            // FIXED: Match info only if we have a roster
-            if (roster != null)
-            {
-                Text.Font = GameFont.Small;
-                GUI.color = Color.white;
-                var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
-                Text.Anchor = TextAnchor.MiddleCenter;
-                var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
-                Widgets.Label(matchInfoRect, matchText);
-                Text.Anchor = TextAnchor.UpperLeft;
-                y += lineHeight + 10f;
-                
-                // INTEGRATED TEAM DISPLAYS - Only when we have roster
-                DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
-            }
-            else
-            {
-                // FIXED: Show arena status when no active roster
-                Text.Font = GameFont.Small;
-                GUI.color = Color.cyan;
-                var statusRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
-                Text.Anchor = TextAnchor.MiddleCenter;
-                
-                string statusText = "Arena Active - Waiting for fighters...";
-                switch (arenaComp.CurrentState)
-                {
-                    case ArenaState.Idle:
-                        var nextRoundTime = arenaComp.GetTimeUntilNextRound();
-                        if (nextRoundTime > 0)
-                        {
-                            var minutes = nextRoundTime / 60;
-                            var seconds = nextRoundTime % 60;
-                            statusText = $"⏰ NEXT ROUND: {minutes:F0}:{seconds:D2}";
-                        }
-                        else
-                        {
-                            statusText = "✅ STARTING NEW ROUND...";
-                        }
-                        break;
-                    case ArenaState.Resetting:
-                        statusText = "⚙️ RESETTING ARENA...";
-                        break;
-                    case ArenaState.Ended:
-                        statusText = "🏆 ROUND COMPLETE - PREPARING RESET...";
-                        break;
-                }
-                
-                Widgets.Label(statusRect, statusText);
-                Text.Anchor = TextAnchor.UpperLeft;
-            }
-            
-            // Reset styling
-            GUI.color = Color.white;
-            Text.Font = GameFont.Small;
-            Text.Anchor = TextAnchor.UpperLeft;
-        }
-        
-        // FIXED: Main timer that changes based on current phase and handles null roster
+        // Main timer that changes based on current phase and handles null roster
         private static void DrawMainTimer(MapComponent_SolWorldArena arenaComp, RoundRoster roster, Rect innerRect, ref float y)
         {
             string timerText = "";
@@ -321,7 +558,7 @@ namespace SolWorldMod
             }
         }
         
-        // FIXED: Only draw team displays when roster exists
+        // Only draw team displays when roster exists (for standard leaderboard)
         private static void DrawIntegratedTeamDisplays(RoundRoster roster, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
         {
             if (roster?.Red == null || roster?.Blue == null) return;
