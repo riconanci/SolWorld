@@ -20,19 +20,15 @@ namespace SolWorldMod
             if (arenaComp?.CurrentRoster == null || !arenaComp.IsActive)
                 return;
             
-            // CRITICAL: Handle preview countdown that works during pause
+            // Handle phase-specific countdown logic
             HandlePreviewCountdown(arenaComp);
+            HandleCombatCountdown(arenaComp);
+            HandleNextRoundCountdown(arenaComp);
             
             var roster = arenaComp.CurrentRoster;
             
-            // Main scoreboard window
-            DrawMainScoreboard(arenaComp, roster);
-            
-            // Team bars (if space allows)
-            if (UI.screenWidth > 1200)
-            {
-                DrawTeamBars(roster);
-            }
+            // MAIN DISPLAY: Extended center leaderboard that includes pawn squares
+            DrawExtendedLeaderboard(arenaComp, roster);
         }
         
         // CRITICAL: Handle preview countdown that works during pause
@@ -66,123 +62,104 @@ namespace SolWorldMod
             lastFrameWasPreview = true;
         }
         
-        private static void DrawMainScoreboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
+        // Handle combat countdown and auto-end
+        private static void HandleCombatCountdown(MapComponent_SolWorldArena arenaComp)
         {
-            // Position in top-right corner
-            var rect = new Rect(UI.screenWidth - 320f, 10f, 300f, 240f);
+            if (arenaComp.CurrentState != ArenaState.Combat)
+            {
+                return;
+            }
             
-            // Semi-transparent background
+            var timeRemaining = arenaComp.GetTimeLeftInCurrentPhase();
+            
+            // Log combat time every 10 seconds for performance
+            if (Mathf.Floor(timeRemaining / 10f) != Mathf.Floor(lastPreviewTimeCheck / 10f))
+            {
+                Log.Message($"SolWorld: Combat time remaining: {timeRemaining:F0} seconds");
+                lastPreviewTimeCheck = timeRemaining; // Reuse existing field
+            }
+        }
+        
+        // Handle next round countdown and auto-reset trigger
+        private static void HandleNextRoundCountdown(MapComponent_SolWorldArena arenaComp)
+        {
+            if (arenaComp.CurrentState != ArenaState.Idle)
+            {
+                return;
+            }
+            
+            var timeUntilNext = arenaComp.GetTimeUntilNextRound();
+            
+            // Log countdown every 30 seconds for performance
+            if (Mathf.Floor(timeUntilNext / 30f) != Mathf.Floor(lastPreviewTimeCheck / 30f))
+            {
+                Log.Message($"SolWorld: Next round in: {timeUntilNext} seconds");
+                lastPreviewTimeCheck = timeUntilNext; // Reuse existing field
+            }
+        }
+        
+        // NEW: Extended leaderboard that encompasses everything in one cohesive layout
+        private static void DrawExtendedLeaderboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
+        {
+            // ENHANCED LAYOUT: Larger box that includes pawn squares
+            const float pawnBoxSize = 56f; // INCREASED from 48f to 56f (larger squares)
+            const float pawnBoxSpacing = 6f; // Increased spacing
+            const float teamSeparation = 80f; // Space between teams
+            
+            var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
+            var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
+            var pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
+            
+            // Calculate total dimensions - leaderboard now encompasses pawn squares
+            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f); // At least 700px wide, or wide enough for pawns + padding
+            var totalHeight = 280f; // Increased height to include pawn squares
+            
+            var centerX = UI.screenWidth / 2f;
+            var topY = 15f; // Very top of screen
+            
+            var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
+            
+            // Enhanced semi-transparent background
             var oldColor = GUI.color;
-            GUI.color = new Color(0f, 0f, 0f, 0.8f);
+            GUI.color = new Color(0f, 0f, 0f, 0.9f); // Slightly more opaque
             GUI.DrawTexture(rect, BaseContent.WhiteTex);
+            
+            // Border for better definition
+            GUI.color = Color.white;
+            Widgets.DrawBox(rect, 3); // Thicker border
             GUI.color = oldColor;
             
-            var innerRect = rect.ContractedBy(10f);
+            var innerRect = rect.ContractedBy(20f);
             Text.Font = GameFont.Small;
             Text.Anchor = TextAnchor.UpperLeft;
             
             float y = innerRect.y;
-            float lineHeight = 18f;
+            float lineHeight = 24f; // Increased line height
             
             // Header with enhanced styling
             GUI.color = Color.yellow;
             Text.Font = GameFont.Medium;
-            var headerRect = new Rect(innerRect.x, y, innerRect.width, 24f);
-            Widgets.Label(headerRect, "SolWorld Arena");
-            y += 28f;
+            var headerRect = new Rect(innerRect.x, y, innerRect.width, 32f);
+            Text.Anchor = TextAnchor.MiddleCenter;
+            Widgets.Label(headerRect, "SolWorld Arena - Live Combat Dashboard");
+            Text.Anchor = TextAnchor.UpperLeft;
+            y += 36f;
             
-            // Phase with time - ENHANCED for preview
+            // MAIN TIMER DISPLAY - Shows different content based on phase
+            DrawMainTimer(arenaComp, roster, innerRect, ref y);
+            
+            // Match info in a more compact format
             Text.Font = GameFont.Small;
             GUI.color = Color.white;
+            var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
+            Text.Anchor = TextAnchor.MiddleCenter;
+            var matchText = $"Match: {roster.MatchId} | Pool: {roster.RoundRewardTotalSol:F2} SOL | Per Winner: {roster.PerWinnerPayout:F3} SOL";
+            Widgets.Label(matchInfoRect, matchText);
+            Text.Anchor = TextAnchor.UpperLeft;
+            y += lineHeight + 10f;
             
-            string phaseText = "Phase: " + arenaComp.CurrentState;
-            var timeLeft = arenaComp.GetTimeLeftInCurrentPhase();
-            
-            if (arenaComp.CurrentState == ArenaState.Preview)
-            {
-                // SPECIAL HANDLING: Big countdown for preview
-                GUI.color = timeLeft <= 5f ? Color.red : Color.cyan;
-                Text.Font = GameFont.Medium;
-                phaseText = $"PREVIEW: {timeLeft:F1}s";
-                
-                if (timeLeft <= 10f)
-                {
-                    // Flash in final 10 seconds
-                    var flash = Mathf.Sin(Time.realtimeSinceStartup * 8f) > 0f;
-                    GUI.color = flash ? Color.red : Color.yellow;
-                }
-            }
-            else if (arenaComp.CurrentState != ArenaState.Idle)
-            {
-                phaseText += " (" + timeLeft.ToString("F0") + "s)";
-                GUI.color = arenaComp.CurrentState == ArenaState.Combat ? Color.green : Color.white;
-            }
-            
-            var phaseRect = new Rect(innerRect.x, y, innerRect.width, lineHeight + 4f);
-            Widgets.Label(phaseRect, phaseText);
-            y += lineHeight + 8f;
-            
-            // Match ID
-            Text.Font = GameFont.Tiny;
-            GUI.color = Color.gray;
-            Widgets.Label(new Rect(innerRect.x, y, innerRect.width, 14f), "Match: " + roster.MatchId);
-            y += 16f;
-            
-            // Pool info
-            Text.Font = GameFont.Small;
-            GUI.color = Color.white;
-            var poolText = $"Pool: {roster.RoundRewardTotalSol:F2} SOL";
-            Widgets.Label(new Rect(innerRect.x, y, innerRect.width, lineHeight), poolText);
-            y += lineHeight;
-            
-            var payoutText = $"Per Winner: {roster.PerWinnerPayout:F3} SOL";
-            GUI.color = Color.green;
-            Widgets.Label(new Rect(innerRect.x, y, innerRect.width, lineHeight), payoutText);
-            y += lineHeight + 5f;
-            
-            // Team scores with better formatting
-            GUI.color = Color.red;
-            var redText = $"Red: {roster.RedAlive}/10 alive, {roster.RedKills} kills";
-            Widgets.Label(new Rect(innerRect.x, y, innerRect.width, lineHeight), redText);
-            y += lineHeight;
-            
-            GUI.color = Color.blue;
-            var blueText = $"Blue: {roster.BlueAlive}/10 alive, {roster.BlueKills} kills";
-            Widgets.Label(new Rect(innerRect.x, y, innerRect.width, lineHeight), blueText);
-            y += lineHeight + 5f;
-            
-            // Winner announcement
-            if (roster.Winner.HasValue)
-            {
-                GUI.color = roster.Winner == TeamColor.Red ? Color.red : Color.blue;
-                Text.Font = GameFont.Medium;
-                var winnerText = roster.Winner + " TEAM WINS!";
-                var winnerRect = new Rect(innerRect.x, y, innerRect.width, 24f);
-                
-                // Flash the winner text
-                var flash = Mathf.Sin(Time.realtimeSinceStartup * 6f) > 0f;
-                GUI.color = flash ? (roster.Winner == TeamColor.Red ? Color.red : Color.blue) : Color.white;
-                
-                Widgets.Label(winnerRect, winnerText);
-                y += 28f;
-            }
-            
-            // Manual controls for debugging (only during preview/combat)
-            if (arenaComp.CurrentState == ArenaState.Preview || arenaComp.CurrentState == ArenaState.Combat)
-            {
-                Text.Font = GameFont.Tiny;
-                GUI.color = Color.gray;
-                
-                if (arenaComp.CurrentState == ArenaState.Preview)
-                {
-                    Widgets.Label(new Rect(innerRect.x, y, innerRect.width, 12f), "Press SPACE if stuck");
-                    y += 14f;
-                }
-                
-                // Debug info
-                var debugText = $"Paused: {Find.TickManager.Paused} | Speed: {Find.TickManager.CurTimeSpeed}";
-                Widgets.Label(new Rect(innerRect.x, y, innerRect.width, 12f), debugText);
-            }
+            // INTEGRATED TEAM DISPLAYS - Now part of the main leaderboard
+            DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
             
             // Reset styling
             GUI.color = Color.white;
@@ -190,95 +167,262 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        private static void DrawTeamBars(RoundRoster roster)
+        // Main timer that changes based on current phase - ENHANCED to stay visible during round end
+        private static void DrawMainTimer(MapComponent_SolWorldArena arenaComp, RoundRoster roster, Rect innerRect, ref float y)
         {
-            const float pawnBoxSize = 32f;
-            const float pawnBoxSpacing = 2f;
-            const float topMargin = 60f;
+            string timerText = "";
+            Color timerColor = Color.white;
+            bool shouldFlash = false;
             
-            // Red team (left side)
-            DrawTeamBar(roster.Red, TeamColor.Red, true, pawnBoxSize, pawnBoxSpacing, topMargin);
+            switch (arenaComp.CurrentState)
+            {
+                case ArenaState.Preview:
+                    var previewTime = arenaComp.PreviewTimeRemaining;
+                    timerText = $"PREVIEW: {previewTime:F0}s (PAUSED)";
+                    timerColor = previewTime <= 5f ? Color.red : Color.cyan;
+                    shouldFlash = previewTime <= 10f;
+                    break;
+                    
+                case ArenaState.Combat:
+                    var combatTime = arenaComp.GetTimeLeftInCurrentPhase();
+                    timerText = $"COMBAT: {combatTime:F0}s REMAINING";
+                    timerColor = combatTime <= 10f ? Color.red : Color.yellow;
+                    shouldFlash = combatTime <= 5f;
+                    break;
+                    
+                case ArenaState.Ended:
+                    // FIXED: Keep leaderboard visible and show next round countdown
+                    var nextRoundTime = arenaComp.GetTimeUntilNextRound();
+                    if (roster.Winner.HasValue)
+                    {
+                        if (nextRoundTime > 0)
+                        {
+                            var minutes = nextRoundTime / 60;
+                            var seconds = nextRoundTime % 60;
+                            timerText = $"🏆 {roster.Winner} TEAM WINS! 🏆 | NEXT ROUND: {minutes:F0}:{seconds:D2}";
+                            timerColor = roster.Winner == TeamColor.Red ? Color.red : Color.blue;
+                        }
+                        else
+                        {
+                            timerText = $"🏆 {roster.Winner} TEAM WINS! 🏆 | RESETTING...";
+                            timerColor = roster.Winner == TeamColor.Red ? Color.red : Color.blue;
+                        }
+                        shouldFlash = true;
+                    }
+                    else
+                    {
+                        timerText = nextRoundTime > 0 ? $"ROUND COMPLETE | NEXT ROUND: {nextRoundTime / 60:F0}:{nextRoundTime % 60:D2}" : "ROUND COMPLETE | RESETTING...";
+                        timerColor = Color.green;
+                    }
+                    break;
+                    
+                case ArenaState.Resetting:
+                    var resetTime = arenaComp.GetTimeUntilNextRound();
+                    if (resetTime > 0)
+                    {
+                        var minutes = resetTime / 60;
+                        var seconds = resetTime % 60;
+                        timerText = $"⚙️ RESETTING ARENA... | NEXT ROUND: {minutes:F0}:{seconds:D2}";
+                    }
+                    else
+                    {
+                        timerText = "⚙️ RESETTING ARENA...";
+                    }
+                    timerColor = Color.cyan;
+                    break;
+                    
+                case ArenaState.Idle:
+                    var idleTime = arenaComp.GetTimeUntilNextRound();
+                    if (idleTime > 0)
+                    {
+                        var minutes = idleTime / 60;
+                        var seconds = idleTime % 60;
+                        timerText = $"⏰ NEXT ROUND: {minutes:F0}:{seconds:D2}";
+                        timerColor = idleTime <= 30 ? Color.yellow : Color.white;
+                        shouldFlash = idleTime <= 10;
+                    }
+                    else
+                    {
+                        timerText = "✅ ARENA READY - STARTING SOON";
+                        timerColor = Color.green;
+                        shouldFlash = true;
+                    }
+                    break;
+            }
             
-            // Blue team (right side)  
-            DrawTeamBar(roster.Blue, TeamColor.Blue, false, pawnBoxSize, pawnBoxSpacing, topMargin);
+            if (!string.IsNullOrEmpty(timerText))
+            {
+                Text.Font = GameFont.Medium;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                
+                var timerRect = new Rect(innerRect.x, y, innerRect.width, 36f);
+                
+                // Optional flashing effect
+                if (shouldFlash)
+                {
+                    var flash = Mathf.Sin(Time.realtimeSinceStartup * 8f) > 0f;
+                    GUI.color = flash ? timerColor : Color.white;
+                }
+                else
+                {
+                    GUI.color = timerColor;
+                }
+                
+                Widgets.Label(timerRect, timerText);
+                
+                Text.Font = GameFont.Small;
+                Text.Anchor = TextAnchor.UpperLeft;
+                y += 40f;
+            }
         }
         
-        private static void DrawTeamBar(System.Collections.Generic.List<Fighter> fighters, TeamColor team, bool isLeftSide, float boxSize, float spacing, float topMargin)
+        // Integrated team displays that are part of the main leaderboard box
+        private static void DrawIntegratedTeamDisplays(RoundRoster roster, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
+        {
+            var redTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Red.Count - pawnBoxSpacing;
+            var blueTeamWidth = (pawnBoxSize + pawnBoxSpacing) * roster.Blue.Count - pawnBoxSpacing;
+            var totalPawnWidth = redTeamWidth + teamSeparation + blueTeamWidth;
+            
+            var startX = innerRect.x + (innerRect.width - totalPawnWidth) / 2f;
+            
+            // Team headers with enhanced stats
+            var headerY = startY;
+            DrawTeamHeader(roster.Red, TeamColor.Red, startX, headerY, redTeamWidth);
+            var blueStartX = startX + redTeamWidth + teamSeparation;
+            DrawTeamHeader(roster.Blue, TeamColor.Blue, blueStartX, headerY, blueTeamWidth);
+            
+            // Pawn squares below headers
+            var pawnY = startY + 25f;
+            DrawTeamPawnSquares(roster.Red, TeamColor.Red, startX, pawnY, pawnBoxSize, pawnBoxSpacing);
+            DrawTeamPawnSquares(roster.Blue, TeamColor.Blue, blueStartX, pawnY, pawnBoxSize, pawnBoxSpacing);
+            
+            // VS indicator in the middle
+            var vsRect = new Rect(startX + redTeamWidth + 10f, pawnY + pawnBoxSize / 2f - 10f, teamSeparation - 20f, 20f);
+            var oldColor = GUI.color;
+            GUI.color = Color.yellow;
+            Text.Font = GameFont.Medium;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            Widgets.Label(vsRect, "VS");
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.UpperLeft;
+            GUI.color = oldColor;
+        }
+        
+        private static void DrawTeamHeader(System.Collections.Generic.List<Fighter> fighters, TeamColor team, float startX, float y, float width)
         {
             if (fighters == null || fighters.Count == 0) return;
             
             var teamColor = team == TeamColor.Red ? Color.red : Color.blue;
-            var totalWidth = (boxSize + spacing) * fighters.Count - spacing;
-            
-            float startX = isLeftSide ? 20f : UI.screenWidth - totalWidth - 20f;
-            var startY = topMargin;
-            
-            // Team header
             var oldColor = GUI.color;
             GUI.color = teamColor;
             
             Text.Font = GameFont.Small;
             Text.Anchor = TextAnchor.MiddleCenter;
             
-            var headerRect = new Rect(startX, startY, totalWidth, 18f);
-            var teamName = team.ToString().ToUpper() + " TEAM";
-            Widgets.Label(headerRect, teamName);
+            var headerRect = new Rect(startX, y, width, 22f);
+            var aliveCount = fighters.Count(f => f.Alive);
+            var killCount = fighters.Sum(f => f.Kills);
+            var teamHeader = $"{team.ToString().ToUpper()} TEAM ({aliveCount}/10) - {killCount} KILLS";
+            Widgets.Label(headerRect, teamHeader);
             
-            // Individual fighter boxes
+            Text.Anchor = TextAnchor.UpperLeft;
+            GUI.color = oldColor;
+        }
+        
+        private static void DrawTeamPawnSquares(System.Collections.Generic.List<Fighter> fighters, TeamColor team, float startX, float y, float boxSize, float spacing)
+        {
+            if (fighters == null || fighters.Count == 0) return;
+            
+            var teamColor = team == TeamColor.Red ? Color.red : Color.blue;
+            
+            // Individual fighter boxes (larger squares)
             for (int i = 0; i < fighters.Count; i++)
             {
                 var fighter = fighters[i];
                 var boxRect = new Rect(
                     startX + i * (boxSize + spacing), 
-                    startY + 22f, 
+                    y, 
                     boxSize, 
                     boxSize
                 );
                 
-                DrawFighterBox(boxRect, fighter, teamColor);
+                DrawEnhancedFighterBox(boxRect, fighter, teamColor);
             }
-            
-            // Reset styling
-            GUI.color = oldColor;
-            Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        private static void DrawFighterBox(Rect rect, Fighter fighter, Color teamColor)
+        // Enhanced fighter boxes with larger size and better detail
+        private static void DrawEnhancedFighterBox(Rect rect, Fighter fighter, Color teamColor)
         {
             try
             {
-                // Fighter status background
+                // Fighter status background with better visual feedback
                 var bgColor = fighter.Alive ? teamColor : Color.gray;
-                bgColor.a = fighter.Alive ? 0.8f : 0.4f;
+                bgColor.a = fighter.Alive ? 0.9f : 0.6f;
                 
                 var oldColor = GUI.color;
                 GUI.color = bgColor;
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // Border for alive fighters
+                // Enhanced border for alive fighters
                 if (fighter.Alive)
                 {
                     GUI.color = Color.white;
-                    Widgets.DrawBox(rect, 1);
+                    Widgets.DrawBox(rect, 2);
+                }
+                else
+                {
+                    // Enhanced death marker
+                    GUI.color = Color.red;
+                    Widgets.DrawBox(rect, 2);
+                    
+                    // Draw larger death X
+                    var centerX = rect.center.x;
+                    var centerY = rect.center.y;
+                    var crossSize = rect.width * 0.4f; // Larger cross
+                    
+                    // Thicker cross lines for death indicator
+                    GUI.DrawTexture(new Rect(centerX - crossSize/2, centerY - 2f, crossSize, 4f), BaseContent.WhiteTex);
+                    GUI.DrawTexture(new Rect(centerX - 2f, centerY - crossSize/2, 4f, crossSize), BaseContent.WhiteTex);
                 }
                 
-                // Kill count badge
+                // Enhanced kill count badge (larger and more visible)
                 if (fighter.Kills > 0)
                 {
-                    var killRect = new Rect(rect.xMax - 12f, rect.y, 12f, 12f);
+                    var killRect = new Rect(rect.xMax - 22f, rect.y, 22f, 22f); // Larger badge
                     GUI.color = Color.yellow;
                     GUI.DrawTexture(killRect, BaseContent.WhiteTex);
                     
+                    // Black border for kill badge
                     GUI.color = Color.black;
-                    Text.Font = GameFont.Tiny;
+                    Widgets.DrawBox(killRect, 1);
+                    
+                    GUI.color = Color.black;
+                    Text.Font = GameFont.Small; // Larger font
                     Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(killRect, fighter.Kills.ToString());
                 }
                 
-                // Enhanced tooltip with more info
+                // Fighter name on larger boxes (more visible)
+                if (rect.width >= 50f)
+                {
+                    GUI.color = Color.white;
+                    Text.Font = GameFont.Tiny;
+                    Text.Anchor = TextAnchor.MiddleCenter;
+                    var nameRect = new Rect(rect.x, rect.yMax - 16f, rect.width, 14f); // Larger name area
+                    var shortName = fighter.WalletShort.Length > 10 ? fighter.WalletShort.Substring(0, 10) : fighter.WalletShort;
+                    
+                    // Background for name
+                    GUI.color = new Color(0f, 0f, 0f, 0.7f);
+                    GUI.DrawTexture(nameRect, BaseContent.WhiteTex);
+                    GUI.color = Color.white;
+                    
+                    Widgets.Label(nameRect, shortName);
+                }
+                
+                // Enhanced tooltip with more detailed info
                 if (Mouse.IsOver(rect))
                 {
-                    var tooltip = BuildFighterTooltip(fighter);
+                    var tooltip = BuildEnhancedFighterTooltip(fighter);
                     TooltipHandler.TipRegion(rect, tooltip);
                 }
                 
@@ -291,59 +435,77 @@ namespace SolWorldMod
                 // Ignore drawing errors but log for debugging
                 if (Prefs.DevMode)
                 {
-                    Log.Warning($"SolWorld: Fighter box draw error: {ex.Message}");
+                    Log.Warning($"SolWorld: Enhanced fighter box draw error: {ex.Message}");
                 }
             }
         }
         
-        private static string BuildFighterTooltip(Fighter fighter)
+        private static string BuildEnhancedFighterTooltip(Fighter fighter)
         {
-            var tooltip = $"Wallet: {fighter.WalletShort}\n";
+            var tooltip = $"Fighter: {fighter.WalletFull}\n";
+            tooltip += $"Short: {fighter.WalletShort}\n";
             tooltip += $"Team: {fighter.Team}\n";
-            tooltip += $"Status: {(fighter.Alive ? "ALIVE" : "DEAD")}\n";
+            tooltip += $"Status: {(fighter.Alive ? "ALIVE & FIGHTING" : "ELIMINATED")}\n";
             tooltip += $"Kills: {fighter.Kills}";
             
             if (fighter.PawnRef != null)
             {
-                tooltip += $"\nPawn: {fighter.PawnRef.Name}";
-                if (fighter.PawnRef.Spawned)
+                tooltip += $"\n\nPawn Details:\n";
+                tooltip += $"Name: {fighter.PawnRef.Name}";
+                
+                if (fighter.PawnRef.Spawned && fighter.Alive)
                 {
                     tooltip += $"\nPosition: {fighter.PawnRef.Position}";
+                    tooltip += $"\nFaction: {fighter.PawnRef.Faction?.Name ?? "None"}";
                     
                     if (fighter.PawnRef.CurJob != null)
                     {
-                        tooltip += $"\nJob: {fighter.PawnRef.CurJob.def.defName}";
+                        tooltip += $"\nCurrent Job: {fighter.PawnRef.CurJob.def.defName}";
+                        
+                        if (fighter.PawnRef.CurJob.targetA.IsValid && fighter.PawnRef.CurJob.targetA.Thing != null)
+                        {
+                            tooltip += $"\nTarget: {fighter.PawnRef.CurJob.targetA.Thing.LabelShort}";
+                        }
                     }
                     
                     if (fighter.PawnRef.health != null)
                     {
-                        var healthPercent = (float)fighter.PawnRef.health.summaryHealth.SummaryHealthPercent;
+                        var healthPercent = fighter.PawnRef.health.summaryHealth.SummaryHealthPercent;
                         tooltip += $"\nHealth: {healthPercent:P0}";
                     }
+                    
+                    if (fighter.PawnRef.equipment?.Primary != null)
+                    {
+                        tooltip += $"\nWeapon: {fighter.PawnRef.equipment.Primary.LabelShort}";
+                    }
+                }
+                else if (!fighter.Alive)
+                {
+                    tooltip += $"\nStatus: DEAD";
                 }
                 else
                 {
-                    tooltip += "\nPawn: Not spawned";
+                    tooltip += $"\nStatus: Not spawned";
                 }
             }
             else
             {
-                tooltip += "\nPawn: Not assigned";
+                tooltip += $"\n\nPawn: Not assigned";
             }
             
             return tooltip;
         }
         
-        // OPTIONAL: Large preview countdown overlay (for extra visibility)
+        // Keep the preview overlay for extra visibility during preview phase
         public static void DrawPreviewOverlay(MapComponent_SolWorldArena arenaComp)
         {
             if (!arenaComp.IsPreviewActive) return;
             
             var timeRemaining = arenaComp.PreviewTimeRemaining;
             
-            // Center screen overlay
+            // Center screen overlay (below the main leaderboard)
             var centerX = UI.screenWidth / 2f;
-            var centerY = UI.screenHeight / 2f;
+            var centerY = UI.screenHeight / 2f + 150f; // Offset down to avoid leaderboard
             
             // Large countdown text
             Text.Font = GameFont.Medium;
@@ -351,7 +513,7 @@ namespace SolWorldMod
             
             var countdownText = $"PREVIEW: {timeRemaining:F0}";
             var textSize = Text.CalcSize(countdownText);
-            var textRect = new Rect(centerX - textSize.x / 2f, centerY - 100f, textSize.x, textSize.y);
+            var textRect = new Rect(centerX - textSize.x / 2f, centerY - 50f, textSize.x, textSize.y);
             
             // Flash effect in final seconds
             var oldColor = GUI.color;
@@ -379,9 +541,9 @@ namespace SolWorldMod
             
             // Instructions
             Text.Font = GameFont.Small;
-            var instructText = "Game paused for 30-second preview";
+            var instructText = "Game paused for 30-second preview - Combat starting soon!";
             var instructSize = Text.CalcSize(instructText);
-            var instructRect = new Rect(centerX - instructSize.x / 2f, centerY - 60f, instructSize.x, instructSize.y);
+            var instructRect = new Rect(centerX - instructSize.x / 2f, centerY, instructSize.x, instructSize.y);
             
             GUI.color = Color.white;
             Widgets.Label(instructRect, instructText);
