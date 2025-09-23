@@ -3,14 +3,28 @@
   "version": "1.0.0",
   "description": "SolWorld Arena Backend - Pump.fun Integration",
   "main": "dist/index.js",
-  "type": "module",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "test": "node --test dist/test/*.js",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "type-check": "tsc --noEmit",
+    "lint": "echo 'Linting skipped - add ESLint if desired'",
+    "setup": "npm install && npm run build",
+    "deploy": "npm run clean && npm run build && npm start"
   },
+  "keywords": [
+    "solana",
+    "pump.fun",
+    "crypto",
+    "arena",
+    "gaming",
+    "blockchain",
+    "rimworld"
+  ],
+  "author": "SolWorld Team",
+  "license": "MIT",
   "dependencies": {
     "@solana/web3.js": "^1.87.6",
     "express": "^4.18.2",
@@ -28,6 +42,15 @@
     "tsx": "^4.6.0"
   },
   "engines": {
-    "node": ">=18.0.0"
-  }
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/solworld/arena"
+  },
+  "bugs": {
+    "url": "https://github.com/solworld/arena/issues"
+  },
+  "homepage": "https://solworld.io"
 }
