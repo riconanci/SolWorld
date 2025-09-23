@@ -669,23 +669,102 @@ namespace SolWorldMod
         
         private void CreateRoster()
         {
-            var mockHolders = GenerateMockHolders();
+            Log.Message("SolWorld: Creating roster...");
             
+            // Try to get real holders from backend
+            string[] realHolders = null;
+            try
+            {
+                Log.Message("SolWorld: Fetching holders from: " + SolWorldMod.Settings.apiBaseUrl + "/api/arena/holders");
+                
+                var request = System.Net.WebRequest.Create(SolWorldMod.Settings.apiBaseUrl + "/api/arena/holders");
+                request.Timeout = 10000;
+                request.Method = "GET";
+                
+                using (var response = request.GetResponse())
+                using (var stream = response.GetResponseStream())
+                using (var reader = new System.IO.StreamReader(stream))
+                {
+                    var jsonResponse = reader.ReadToEnd();
+                    Log.Message("SolWorld: Backend response received: " + jsonResponse.Substring(0, Math.Min(100, jsonResponse.Length)) + "...");
+                    
+                    // Simple JSON parsing to extract wallets array
+                    if (jsonResponse.Contains("\"wallets\":[") && jsonResponse.Contains("\"success\":true"))
+                    {
+                        realHolders = ExtractWalletsFromJson(jsonResponse);
+                        Log.Message("SolWorld: Extracted " + (realHolders?.Length ?? 0) + " wallet addresses");
+                    }
+                    else
+                    {
+                        Log.Warning("SolWorld: Invalid JSON response structure");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error("SolWorld: Failed to fetch holders: " + ex.Message);
+            }
+            
+            // Create roster with real or mock data
             currentRoster = new RoundRoster
             {
                 RoundRewardTotalSol = SolWorldMod.Settings.roundPoolSol,
                 PayoutPercent = SolWorldMod.Settings.payoutPercent
             };
             
-            for (int i = 0; i < 10; i++)
+            if (realHolders != null && realHolders.Length >= 20)
             {
-                currentRoster.Red.Add(new Fighter(mockHolders[i], TeamColor.Red));
-                currentRoster.Blue.Add(new Fighter(mockHolders[i + 10], TeamColor.Blue));
+                Log.Message("SolWorld: Using REAL wallet addresses from backend!");
+                for (int i = 0; i < 10; i++)
+                {
+                    currentRoster.Red.Add(new Fighter(realHolders[i], TeamColor.Red));
+                    currentRoster.Blue.Add(new Fighter(realHolders[i + 10], TeamColor.Blue));
+                }
+            }
+            else
+            {
+                Log.Message("SolWorld: Falling back to mock data");
+                var mockHolders = GenerateMockHolders();
+                for (int i = 0; i < 10; i++)
+                {
+                    currentRoster.Red.Add(new Fighter(mockHolders[i], TeamColor.Red));
+                    currentRoster.Blue.Add(new Fighter(mockHolders[i + 10], TeamColor.Blue));
+                }
             }
             
             Log.Message("SolWorld: Created roster with 20 fighters (10 red, 10 blue)");
+            Log.Message("SolWorld: Sample fighter names - Red[0]: " + currentRoster.Red[0].WalletShort + ", Blue[0]: " + currentRoster.Blue[0].WalletShort);
         }
-        
+
+        private string[] ExtractWalletsFromJson(string json)
+        {
+            try
+            {
+                // Simple string parsing to extract wallet addresses
+                var walletStart = json.IndexOf("\"wallets\":[") + 11;
+                var walletEnd = json.IndexOf("]", walletStart);
+                var walletsSection = json.Substring(walletStart, walletEnd - walletStart);
+                
+                // Split by quotes and commas to get individual addresses
+                var parts = walletsSection.Replace("\"", "").Split(',');
+                var wallets = new List<string>();
+                
+                foreach (var part in parts)
+                {
+                    var trimmed = part.Trim();
+                    if (trimmed.Length > 30) // Valid wallet address length
+                    {
+                        wallets.Add(trimmed);
+                    }
+                }
+                
+                return wallets.ToArray();
+            }
+            catch
+            {
+                return null;
+            }
+        }        
         private string[] GenerateMockHolders()
         {
             var holders = new string[20];
