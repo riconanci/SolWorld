@@ -100,7 +100,7 @@ namespace SolWorldMod
                     new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 4, Description = "Assault Rifles" },
                     new WeaponLoadout { DefName = "Gun_Autopistol", Count = 3, Description = "Autopistols" },
                     new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" },
-                    new WeaponLoadout { DefName = "Gun_GrenadeLauncher", Count = 1, Description = "Frag Grenades" }
+                    new WeaponLoadout { DefName = "Gun_GrenadeLauncher", Count = 1, Description = "Grenade Launcher" }
                 }
             },
 
