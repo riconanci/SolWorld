@@ -14,7 +14,7 @@ namespace SolWorldMod
             
             // Initialize UI drawer for scoreboard
             SimpleUIDrawer.Initialize();
-            Log.Message("SolWorld: Mod initialized with UI drawer");
+            Log.Message("SolWorld: Mod initialized with clean arena UI system");
         }
 
         public override void DoSettingsWindowContents(Rect inRect)
@@ -80,58 +80,88 @@ namespace SolWorldMod
                 }
             }
 
-            // Show description based on mode
+            // Show description of current loadout
+            string loadoutDesc;
             if (Settings.selectedLoadoutPreset == -1)
             {
-                listingStandard.Label("Description: Randomly selects a different loadout preset each round", -1f);
-                listingStandard.Gap(4f);
-                
-                listingStandard.Label("Available Presets:");
-                foreach (var preset in LoadoutManager.AVAILABLE_PRESETS)
-                {
-                    listingStandard.Label("• " + preset.Name + " - " + preset.Description, -1f);
-                }
+                loadoutDesc = "A different combat preset will be randomly selected each round for variety";
             }
             else
             {
-                // Show specific preset details
-                var selectedPreset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
-                listingStandard.Label("Description: " + selectedPreset.Description, -1f);
-                listingStandard.Gap(4f);
-
-                listingStandard.Label("Weapon Distribution (per team):");
-                if (selectedPreset.Weapons != null)
-                {
-                    foreach (var weapon in selectedPreset.Weapons)
-                    {
-                        listingStandard.Label("• " + weapon.Count + "x " + weapon.Description);
-                    }
-                }
+                var preset = LoadoutManager.GetPreset(Settings.selectedLoadoutPreset);
+                loadoutDesc = preset.Description;
             }
-
+            
             listingStandard.Gap(4f);
-            listingStandard.Label("Both teams always receive identical weapon loadouts for fair combat.", -1f);
+            Text.Font = GameFont.Tiny;
+            listingStandard.Label(loadoutDesc);
+            Text.Font = GameFont.Small;
             listingStandard.Gap();
 
-            // Read-only timing display
-            listingStandard.Label("Fixed Timing Configuration:");
-            listingStandard.Label("• Round Cadence: 5 minutes (300 seconds)");
-            listingStandard.Label("• Preview Phase: 30 seconds (paused)");
-            listingStandard.Label("• Combat Phase: 4 minutes (240 seconds)");
+            // NEW: Clean Arena UI Section
             listingStandard.Gap();
+            listingStandard.Label("Clean Arena UI Settings:");
+            listingStandard.Gap(4f);
+            
+            GUI.color = Color.cyan;
+            listingStandard.Label("🎬 Arena Combat Features:");
+            GUI.color = Color.white;
+            
+            Text.Font = GameFont.Tiny;
+            listingStandard.Label("✓ Hides inventory/resource display (top-left)");
+            listingStandard.Label("✓ Removes popup alerts and notifications");
+            listingStandard.Label("✓ Cleans up bottom-right play settings");
+            listingStandard.Label("✓ Hides main tabs and build menus");
+            listingStandard.Label("✓ Removes colonist bar for clean viewing");
+            listingStandard.Label("✓ Shows only time controls + arena scoreboard");
+            Text.Font = GameFont.Small;
+            listingStandard.Gap(4f);
+            
+            GUI.color = Color.yellow;
+            listingStandard.Label("Arena State Indicator:");
+            GUI.color = Color.white;
+            Text.Font = GameFont.Tiny;
+            listingStandard.Label("• 🎬 PREVIEW - 30s paused preview phase");
+            listingStandard.Label("• ⚔️ COMBAT - 90s active fighting");
+            listingStandard.Label("• 🏆 ROUND END - Winner celebration");
+            listingStandard.Label("• 🔄 RESETTING - Arena cleanup & restore");
+            Text.Font = GameFont.Small;
 
-            // Connection status
-            if (!string.IsNullOrEmpty(Settings.apiBaseUrl))
+            // Read-only timing information
+            listingStandard.Gap();
+            listingStandard.Label("Arena Timing Configuration (Fixed):");
+            listingStandard.Gap(4f);
+
+            Text.Font = GameFont.Tiny;
+            listingStandard.Label("Preview Duration: 30 seconds (real-time, game paused)");
+            listingStandard.Label("Combat Duration: 90 seconds (game time)");
+            listingStandard.Label("Reset Duration: 3 seconds (show results)");
+            listingStandard.Label("Round Cadence: 5 minutes total (3min break + 2min active)");
+            Text.Font = GameFont.Small;
+            
+            // Backend Integration Status
+            listingStandard.Gap();
+            listingStandard.Label("Backend Integration:");
+            listingStandard.Gap(4f);
+            
+            if (string.IsNullOrEmpty(Settings.apiBaseUrl))
             {
-                listingStandard.Label("Backend Status: " + (Settings.IsDevMode ? "Dev Mode" : "Production Mode"));
+                GUI.color = Color.red;
+                listingStandard.Label("⚠️ No backend URL configured - using mock data");
             }
             else
             {
-                listingStandard.Label("Backend Status: Not configured");
+                GUI.color = Color.green;
+                listingStandard.Label("✓ Backend URL: " + Settings.apiBaseUrl);
             }
+            GUI.color = Color.white;
+            
+            Text.Font = GameFont.Tiny;
+            listingStandard.Label("Holders endpoint: " + Settings.HoldersEndpoint);
+            listingStandard.Label("Report endpoint: " + Settings.ReportEndpoint);
+            Text.Font = GameFont.Small;
 
             listingStandard.End();
-            base.DoSettingsWindowContents(inRect);
         }
 
         public override string SettingsCategory()

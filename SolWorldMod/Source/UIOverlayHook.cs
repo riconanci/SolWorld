@@ -6,6 +6,10 @@ using RimWorld;
 
 namespace SolWorldMod
 {
+    /// <summary>
+    /// UI overlay hooks with clean arena interface support
+    /// Preserves all original functionality while adding clean UI mode
+    /// </summary>
     [HarmonyPatch]
     public static class UIOverlayHook
     {
@@ -24,6 +28,9 @@ namespace SolWorldMod
                     var arenaComp = Find.CurrentMap.GetComponent<MapComponent_SolWorldArena>();
                     if (arenaComp?.IsActive == true)
                     {
+                        // Set GUI depth to ensure we draw on top of everything
+                        GUI.depth = -1000;
+                        
                         ScoreboardUI.DrawScoreboard();
                         
                         // Draw large preview overlay during preview phase
@@ -31,6 +38,9 @@ namespace SolWorldMod
                         {
                             ScoreboardUI.DrawPreviewOverlay(arenaComp);
                         }
+                        
+                        // Reset GUI depth
+                        GUI.depth = 0;
                     }
                 }
             }
@@ -83,7 +93,7 @@ namespace SolWorldMod
                 // Hook into Unity's OnGUI system directly
                 Camera.onPostRender += DrawArenaUI;
                 initialized = true;
-                Log.Message("SolWorld: Simple UI drawer initialized");
+                Log.Message("SolWorld: Simple UI drawer initialized with clean arena interface");
             }
         }
         
@@ -98,7 +108,7 @@ namespace SolWorldMod
                     var arenaComp = Find.CurrentMap.GetComponent<MapComponent_SolWorldArena>();
                     if (arenaComp?.IsActive == true)
                     {
-                        // Use immediate mode GUI
+                        // Use immediate mode GUI with proper depth
                         GUI.depth = -1000; // Draw on top
                         
                         ScoreboardUI.DrawScoreboard();
@@ -107,6 +117,9 @@ namespace SolWorldMod
                         {
                             ScoreboardUI.DrawPreviewOverlay(arenaComp);
                         }
+                        
+                        // Reset GUI depth
+                        GUI.depth = 0;
                     }
                 }
             }
