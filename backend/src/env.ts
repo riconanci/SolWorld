@@ -13,7 +13,7 @@ export const config = {
   // Solana Blockchain Configuration
   RPC_ENDPOINT: process.env.RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com',
   TEST_TOKEN_MINT: process.env.TEST_TOKEN_MINT || '31JG1RZmcZCRSe3pmX5P18jmCLGBBUyWbV2NuZK7pump',
-  MIN_HOLDER_BALANCE: parseFloat(process.env.MIN_HOLDER_BALANCE || '1'),
+  MIN_HOLDER_BALANCE: parseFloat(process.env.MIN_HOLDER_BALANCE || '50000'),
   
   // Wallet Configuration  
   CREATOR_WALLET_PRIVATE_KEY: process.env.CREATOR_WALLET_PRIVATE_KEY || '66BiAXXY1uNMgiiFVjQ9mAnGTKT2WrzjJy8YpqhnupmUWaXeHPAZG2zz3n3WHUa2FtsJpVj1xU7TA4bk7EAJEXEQ',

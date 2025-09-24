@@ -19,10 +19,89 @@ export class HoldersService {
   private lastFetchTime: number = 0;
   private cachedHolders: TokenHolder[] = [];
   private cacheExpiry: number = 5 * 60 * 1000; // 5 minutes cache
+  private refreshTimer: NodeJS.Timeout | null = null;
+  private isRefreshing: boolean = false;
 
   constructor() {
     this.solanaService = new SolanaService();
+    
+    // Start background refresh timer immediately (Option A)
+    this.startBackgroundRefresh();
+    
     console.log('Holders service initialized');
+  }
+
+  /**
+   * Start 5-minute background refresh timer
+   */
+  private startBackgroundRefresh(): void {
+    console.log('⏰ Starting 5-minute background holder refresh...');
+    
+    // Initial fetch (don't wait 5 minutes for first data)
+    this.backgroundRefresh();
+    
+    // Set up recurring 5-minute refresh
+    this.refreshTimer = setInterval(() => {
+      this.backgroundRefresh();
+    }, 5 * 60 * 1000); // 5 minutes
+    
+    console.log('✅ Background refresh timer active (every 5 minutes)');
+  }
+
+  /**
+   * Background refresh function
+   */
+  private async backgroundRefresh(): Promise<void> {
+    if (this.isRefreshing) {
+      console.log('⏭️ Background refresh already in progress, skipping...');
+      return;
+    }
+
+    try {
+      this.isRefreshing = true;
+      console.log('🔄 Background refresh: Fetching latest holder data...');
+      
+      const previousCount = this.cachedHolders.length;
+      const previousRealCount = this.cachedHolders.filter(h => !this.isMockAddress(h.wallet)).length;
+      
+      // Force refresh by invalidating cache
+      this.lastFetchTime = 0;
+      
+      // Fetch fresh data
+      const freshHolders = await this.getAvailableHolders();
+      const newRealCount = freshHolders.filter(h => !this.isMockAddress(h.wallet)).length;
+      
+      // Log changes
+      if (newRealCount !== previousRealCount || freshHolders.length !== previousCount) {
+        console.log('📊 Holder changes detected:');
+        console.log(`   Real holders: ${previousRealCount} → ${newRealCount}`);
+        console.log(`   Total cached: ${previousCount} → ${freshHolders.length}`);
+        
+        if (newRealCount > previousRealCount) {
+          console.log('🆕 New token holders can now participate!');
+        } else if (newRealCount < previousRealCount) {
+          console.log('📉 Some holders dropped below minimum threshold');
+        }
+      } else {
+        console.log('✅ Background refresh complete (no changes)');
+      }
+      
+    } catch (error) {
+      console.error('❌ Background refresh failed:', error);
+    } finally {
+      this.isRefreshing = false;
+    }
+  }
+
+  /**
+   * Stop background refresh (for cleanup)
+   */
+  stopBackgroundRefresh(): void {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+      console.log('⏹️ Background refresh timer stopped');
+    }
   }
 
   /**
@@ -32,7 +111,7 @@ export class HoldersService {
     try {
       console.log('🎯 Selecting 20 random holders for arena round...');
 
-      // Get fresh or cached holders
+      // Get fresh or cached holders (now always from cache due to background refresh)
       const allHolders = await this.getAvailableHolders();
       
       // Select 20 unique holders
@@ -78,18 +157,18 @@ export class HoldersService {
   }
 
   /**
-   * Get available holders with caching
+   * Get available holders with caching (now primarily serves cached data)
    */
   private async getAvailableHolders(): Promise<TokenHolder[]> {
     const now = Date.now();
     
-    // Use cache if valid
+    // Use cache if valid (background refresh keeps this fresh)
     if (this.cachedHolders.length > 0 && (now - this.lastFetchTime) < this.cacheExpiry) {
       console.log(`📋 Using cached holders (${this.cachedHolders.length} available)`);
       return this.cachedHolders;
     }
 
-    // Fetch fresh data
+    // Fetch fresh data (mainly for initial startup or cache miss)
     console.log('🔄 Fetching fresh holder data...');
     
     try {
@@ -112,118 +191,105 @@ export class HoldersService {
         console.log(`📊 Mixed data: ${realHolders.length} real + ${mockHolders.length} mock holders`);
         return this.cachedHolders;
       } else {
-        // No real holders, use all mock
-        const mockHolders = this.solanaService.generateMockHolders(50);
+        // No real holders found, use all mock
+        const mockHolders = this.solanaService.generateMockHolders(30);
+        
         this.cachedHolders = mockHolders;
         this.lastFetchTime = now;
         
-        console.log(`🧪 Using ${mockHolders.length} mock holders (no real data)`);
+        console.log(`🧪 Using ${mockHolders.length} mock holders (no real holders found)`);
         return mockHolders;
       }
     } catch (error) {
-      console.error('Failed to fetch holders, using mock data:', error);
+      console.error('❌ Failed to fetch holders, using cached or mock data');
       
-      // Fallback to mock on any error
-      const mockHolders = this.solanaService.generateMockHolders(50);
+      // Return cached data if available, otherwise generate mock
+      if (this.cachedHolders.length > 0) {
+        console.log(`📋 Returning ${this.cachedHolders.length} cached holders due to fetch error`);
+        return this.cachedHolders;
+      }
+      
+      const mockHolders = this.solanaService.generateMockHolders(30);
       this.cachedHolders = mockHolders;
       this.lastFetchTime = now;
       
+      console.log(`🧪 Generated ${mockHolders.length} emergency mock holders`);
       return mockHolders;
     }
   }
 
   /**
-   * Randomly select wallets from available holders
+   * Select random wallets from available holders
    */
-  private selectRandomWallets(holders: TokenHolder[], count: number): {
+  private selectRandomWallets(allHolders: TokenHolder[], count: number): { 
     wallets: string[];
     source: 'blockchain' | 'mock' | 'mixed';
     mockUsed: number;
   } {
-    if (holders.length === 0) {
+    if (allHolders.length === 0) {
       return { wallets: [], source: 'mock', mockUsed: 0 };
     }
 
-    // Shuffle holders array
-    const shuffled = [...holders].sort(() => Math.random() - 0.5);
-    
-    // Take the first 'count' items
+    // Shuffle and select
+    const shuffled = [...allHolders].sort(() => Math.random() - 0.5);
     const selected = shuffled.slice(0, Math.min(count, shuffled.length));
-    const wallets = selected.map(h => h.wallet);
     
     // Determine source type
+    const realCount = selected.filter(h => !this.isMockAddress(h.wallet)).length;
+    const mockCount = selected.length - realCount;
+    
     let source: 'blockchain' | 'mock' | 'mixed' = 'blockchain';
-    let mockUsed = 0;
-    
-    // Count mock holders (they have generated addresses that are predictable)
-    for (const holder of selected) {
-      if (this.isMockAddress(holder.wallet)) {
-        mockUsed++;
-      }
-    }
-    
-    if (mockUsed === selected.length) {
-      source = 'mock';
-    } else if (mockUsed > 0) {
-      source = 'mixed';
-    }
-
-    // Ensure uniqueness (shouldn't be needed but safety check)
-    const uniqueWallets = [...new Set(wallets)];
-    
-    console.log(`🎲 Selected ${uniqueWallets.length} unique wallets from ${holders.length} available`);
-    if (mockUsed > 0) {
-      console.log(`   (${mockUsed} mock addresses used)`);
-    }
+    if (mockCount === selected.length) source = 'mock';
+    else if (mockCount > 0) source = 'mixed';
     
     return {
-      wallets: uniqueWallets,
+      wallets: selected.map(h => h.wallet),
       source,
-      mockUsed
+      mockUsed: mockCount
     };
   }
 
   /**
-   * Check if address appears to be a mock address
-   * Mock addresses have a predictable pattern from generateMockAddress
+   * Check if an address is a mock address
    */
   private isMockAddress(address: string): boolean {
-    // This is a heuristic - mock addresses are randomly generated
-    // In production, you might track which addresses are mock differently
-    return !this.solanaService.isValidSolanaAddress(address) || 
-           address.length !== 44;
+    // Mock addresses start with specific prefixes or have recognizable patterns
+    return address.startsWith('MOCK') || 
+           address.includes('mock') || 
+           address.includes('test') ||
+           address.length !== 44; // Real Solana addresses are 44 chars
   }
 
   /**
-   * Get holder statistics for monitoring
+   * Get holder statistics (including background refresh info)
    */
-  async getHolderStats() {
+  async getHolderStats(): Promise<any> {
     try {
       const tokenStats = await this.solanaService.getTokenStats();
-      const allHolders = await this.getAvailableHolders();
-      
-      const realHolders = allHolders.filter(h => !this.isMockAddress(h.wallet));
-      const mockHolders = allHolders.filter(h => this.isMockAddress(h.wallet));
+      const cacheAge = this.lastFetchTime > 0 ? Date.now() - this.lastFetchTime : 0;
+      const realHoldersInCache = this.cachedHolders.filter(h => !this.isMockAddress(h.wallet)).length;
+      const mockHoldersInCache = this.cachedHolders.length - realHoldersInCache;
       
       return {
         blockchain: {
           totalHolders: tokenStats.totalHolders,
           eligibleHolders: tokenStats.eligibleHolders,
-          totalSupply: tokenStats.totalSupply,
           minBalance: tokenStats.minBalance
         },
-        cached: {
-          total: allHolders.length,
-          real: realHolders.length,
-          mock: mockHolders.length,
-          lastUpdate: new Date(this.lastFetchTime).toISOString(),
-          cacheAge: Date.now() - this.lastFetchTime
+        cache: {
+          totalCached: this.cachedHolders.length,
+          realCached: realHoldersInCache,
+          mockCached: mockHoldersInCache,
+          ageMinutes: Math.floor(cacheAge / 1000 / 60),
+          isStale: cacheAge > this.cacheExpiry
         },
-        config: {
-          minBalance: config.MIN_HOLDER_BALANCE,
-          roundPool: config.roundPoolSol,
-          payoutPercent: config.PAYOUT_SPLIT_PERCENT
-        }
+        backgroundRefresh: {
+          active: this.refreshTimer !== null,
+          intervalMinutes: 5,
+          isRefreshing: this.isRefreshing,
+          nextRefreshMinutes: this.refreshTimer ? Math.floor((this.cacheExpiry - cacheAge) / 1000 / 60) : 0
+        },
+        lastUpdate: this.lastFetchTime > 0 ? new Date(this.lastFetchTime).toISOString() : 'never'
       };
     } catch (error) {
       console.error('Failed to get holder stats:', error);
@@ -289,6 +355,37 @@ export class HoldersService {
     
     console.log('Test results:', results);
     return results;
+  }
+
+  /**
+   * Get background refresh status
+   */
+  getRefreshStatus(): {
+    active: boolean;
+    isRefreshing: boolean;
+    cacheAge: number;
+    nextRefresh: number;
+    cachedHolders: number;
+  } {
+    const cacheAge = this.lastFetchTime > 0 ? Date.now() - this.lastFetchTime : 0;
+    const nextRefresh = Math.max(0, this.cacheExpiry - cacheAge);
+    
+    return {
+      active: this.refreshTimer !== null,
+      isRefreshing: this.isRefreshing,
+      cacheAge: Math.floor(cacheAge / 1000), // seconds
+      nextRefresh: Math.floor(nextRefresh / 1000), // seconds
+      cachedHolders: this.cachedHolders.length
+    };
+  }
+
+  /**
+   * Cleanup method for graceful shutdown
+   */
+  cleanup(): void {
+    this.stopBackgroundRefresh();
+    this.cachedHolders = [];
+    console.log('🧹 Holders service cleaned up');
   }
 }
 
