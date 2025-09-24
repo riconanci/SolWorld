@@ -7,15 +7,12 @@ using RimWorld;
 namespace SolWorldMod
 {
     /// <summary>
-    /// Safe Harmony patches for clean arena viewing experience
-    /// Only patches methods that definitely exist in RimWorld 1.6
+    /// Nuclear approach - draw a full-screen overlay that only shows arena content
+    /// Instead of trying to hide individual UI elements, we draw our own clean interface
     /// </summary>
     [HarmonyPatch]
     public static class ArenaUIPatches
     {
-        /// <summary>
-        /// Check if arena is currently active on the current map
-        /// </summary>
         private static bool IsArenaActive()
         {
             try
@@ -33,282 +30,276 @@ namespace SolWorldMod
         }
 
         /// <summary>
-        /// Hide the colonist bar during arena combat - this definitely exists
+        /// Nuclear option - draw full screen overlay that replaces ALL UI during arena
+        /// </summary>
+        [HarmonyPostfix]
+        [HarmonyPatch(typeof(Root), "OnGUI")]
+        public static void DrawFullArenaOverlay()
+        {
+            if (!IsArenaActive() || Event.current.type != EventType.Repaint)
+                return;
+
+            try
+            {
+                var arenaComp = Find.CurrentMap?.GetComponent<MapComponent_SolWorldArena>();
+                if (arenaComp == null) return;
+
+                // Set GUI depth to draw over EVERYTHING
+                GUI.depth = -2000;
+
+                // Draw semi-transparent overlay over entire screen to dim default UI
+                var fullScreenRect = new Rect(0, 0, UI.screenWidth, UI.screenHeight);
+                GUI.color = new Color(0, 0, 0, 0.3f); // 30% black overlay
+                GUI.DrawTexture(fullScreenRect, BaseContent.WhiteTex);
+                GUI.color = Color.white;
+
+                // Draw solid black bars to completely hide problem areas
+                DrawUIBlockingBars();
+
+                // Draw our clean arena interface
+                DrawCleanArenaInterface(arenaComp);
+
+                GUI.depth = 0;
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning($"SolWorld: Full arena overlay failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Draw solid black bars over all the UI areas we want to hide
+        /// </summary>
+        private static void DrawUIBlockingBars()
+        {
+            var blackColor = Color.black;
+
+            // Top bar - hide resources, alerts, letters
+            var topBar = new Rect(0, 0, UI.screenWidth, 120f);
+            GUI.color = blackColor;
+            GUI.DrawTexture(topBar, BaseContent.WhiteTex);
+
+            // Bottom bar - hide ALL bottom UI elements
+            var bottomBar = new Rect(0, UI.screenHeight - 120f, UI.screenWidth, 80f);
+            GUI.color = blackColor;
+            GUI.DrawTexture(bottomBar, BaseContent.WhiteTex);
+
+            // Left bar - hide inspect panel area
+            var leftBar = new Rect(0, 120f, 200f, UI.screenHeight - 200f);
+            GUI.color = blackColor;
+            GUI.DrawTexture(leftBar, BaseContent.WhiteTex);
+
+            // Right bar - hide inspect panel area
+            var rightBar = new Rect(UI.screenWidth - 200f, 120f, 200f, UI.screenHeight - 200f);
+            GUI.color = blackColor;
+            GUI.DrawTexture(rightBar, BaseContent.WhiteTex);
+
+            GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// Draw our custom clean arena interface
+        /// </summary>
+        private static void DrawCleanArenaInterface(MapComponent_SolWorldArena arenaComp)
+        {
+            // Draw minimal time controls in top-left
+            DrawMinimalTimeControls();
+
+            // Draw arena status in top-center
+            DrawArenaStatus(arenaComp);
+
+            // Draw compact controls in top-right
+            DrawCompactControls();
+
+            // Draw the main scoreboard (this should still work)
+            ScoreboardUI.DrawScoreboard();
+
+            if (arenaComp.IsPreviewActive)
+            {
+                ScoreboardUI.DrawPreviewOverlay(arenaComp);
+            }
+        }
+
+        /// <summary>
+        /// Draw minimal time controls
+        /// </summary>
+        private static void DrawMinimalTimeControls()
+        {
+            float controlWidth = 180f;
+            float controlHeight = 30f;
+            var controlRect = new Rect(10f, 10f, controlWidth, controlHeight);
+
+            // Dark background
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+            GUI.DrawTexture(controlRect, BaseContent.WhiteTex);
+            GUI.color = Color.white;
+            Widgets.DrawBox(controlRect, 1);
+
+            // Buttons
+            float buttonSize = 26f;
+            float spacing = 2f;
+            float x = controlRect.x + 4f;
+            float y = controlRect.y + 2f;
+
+            // Pause/Play
+            var pauseRect = new Rect(x, y, buttonSize, buttonSize);
+            string pauseText = Find.TickManager.Paused ? ">" : "||";
+            GUI.color = Find.TickManager.Paused ? Color.green : Color.yellow;
+            if (GUI.Button(pauseRect, pauseText))
+            {
+                Find.TickManager.TogglePaused();
+            }
+            GUI.color = Color.white;
+            x += buttonSize + spacing;
+
+            // Speed controls
+            for (int i = 0; i < 4; i++)
+            {
+                var speedRect = new Rect(x, y, buttonSize, buttonSize);
+                var timeSpeed = (TimeSpeed)i;
+                
+                bool isCurrentSpeed = !Find.TickManager.Paused && Find.TickManager.CurTimeSpeed == timeSpeed;
+                GUI.color = isCurrentSpeed ? Color.green : Color.white;
+                
+                if (GUI.Button(speedRect, (i + 1).ToString()))
+                {
+                    Find.TickManager.CurTimeSpeed = timeSpeed;
+                    if (Find.TickManager.Paused)
+                        Find.TickManager.TogglePaused();
+                }
+                
+                x += buttonSize + spacing;
+                GUI.color = Color.white;
+            }
+        }
+
+        /// <summary>
+        /// Draw arena status indicator
+        /// </summary>
+        private static void DrawArenaStatus(MapComponent_SolWorldArena arenaComp)
+        {
+            float statusWidth = 200f;
+            float statusHeight = 30f;
+            var statusRect = new Rect((UI.screenWidth - statusWidth) / 2f, 10f, statusWidth, statusHeight);
+
+            // Background
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+            GUI.DrawTexture(statusRect, BaseContent.WhiteTex);
+            
+            // Determine status
+            string stateText = "ARENA ACTIVE";
+            Color stateColor = Color.yellow;
+            
+            switch (arenaComp.CurrentState)
+            {
+                case ArenaState.Preview:
+                    stateText = "PREVIEW MODE";
+                    stateColor = Color.cyan;
+                    break;
+                case ArenaState.Combat:
+                    stateText = "COMBAT ACTIVE";
+                    stateColor = Color.red;
+                    break;
+                case ArenaState.Ended:
+                    stateText = "ROUND COMPLETE";
+                    stateColor = Color.green;
+                    break;
+                case ArenaState.Resetting:
+                    stateText = "RESETTING ARENA";
+                    stateColor = Color.yellow;
+                    break;
+            }
+
+            GUI.color = stateColor;
+            Widgets.DrawBox(statusRect, 2);
+            
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            Widgets.Label(statusRect, stateText);
+            Text.Anchor = TextAnchor.UpperLeft;
+            
+            GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// Draw compact controls
+        /// </summary>
+        private static void DrawCompactControls()
+        {
+            float controlWidth = 120f;
+            float controlHeight = 30f;
+            var controlRect = new Rect(UI.screenWidth - controlWidth - 10f, 10f, controlWidth, controlHeight);
+
+            // Dark background
+            GUI.color = new Color(0.1f, 0.1f, 0.1f, 0.9f);
+            GUI.DrawTexture(controlRect, BaseContent.WhiteTex);
+            GUI.color = Color.white;
+            Widgets.DrawBox(controlRect, 1);
+
+            // Exit arena button
+            var exitRect = new Rect(controlRect.x + 5f, controlRect.y + 5f, 50f, 20f);
+            GUI.color = Color.red;
+            if (GUI.Button(exitRect, "EXIT"))
+            {
+                var arenaComp = Find.CurrentMap?.GetComponent<MapComponent_SolWorldArena>();
+                if (arenaComp != null)
+                {
+                    arenaComp.StopArena();
+                    Messages.Message("Arena stopped by user", MessageTypeDefOf.NeutralEvent);
+                }
+            }
+
+            // Settings button
+            var settingsRect = new Rect(controlRect.x + 60f, controlRect.y + 5f, 50f, 20f);
+            GUI.color = Color.cyan;
+            if (GUI.Button(settingsRect, "SET"))
+            {
+                Find.WindowStack.Add(new Dialog_ModSettings(LoadedModManager.GetMod<SolWorldMod>()));
+            }
+
+            GUI.color = Color.white;
+        }
+
+        /// <summary>
+        /// Hide colonist bar (this one should definitely work)
         /// </summary>
         [HarmonyPrefix]
         [HarmonyPatch(typeof(ColonistBar), "ColonistBarOnGUI")]
-        public static bool ColonistBar_Prefix()
+        public static bool HideColonistBar()
         {
             return !IsArenaActive();
         }
 
         /// <summary>
-        /// Hide notification messages during arena combat - this definitely exists
+        /// Hide messages (this should also work)
         /// </summary>
         [HarmonyPrefix]
         [HarmonyPatch(typeof(Messages), "MessagesDoGUI")]
-        public static bool Messages_MessagesDoGUI_Prefix()
+        public static bool HideMessages()
         {
             return !IsArenaActive();
-        }
-
-        /// <summary>
-        /// Add arena status indicator next to time controls - this definitely exists
-        /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(GlobalControlsUtility), "DoTimespeedControls")]
-        public static void GlobalControls_DoTimespeedControls_Postfix(float leftX, float width, ref float curBaseY)
-        {
-            if (!IsArenaActive())
-                return;
-            
-            try
-            {
-                var arenaComp = Find.CurrentMap?.GetComponent<MapComponent_SolWorldArena>();
-                if (arenaComp == null) return;
-
-                var rect = new Rect(leftX + width + 10f, curBaseY - 26f, 200f, 24f);
-                
-                GUI.color = Color.yellow;
-                Text.Font = GameFont.Tiny;
-                Text.Anchor = TextAnchor.MiddleLeft;
-                
-                string stateText = "ARENA ACTIVE";
-                switch (arenaComp.CurrentState)
-                {
-                    case ArenaState.Preview:
-                        stateText = "🎬 PREVIEW";
-                        GUI.color = Color.cyan;
-                        break;
-                    case ArenaState.Combat:
-                        stateText = "⚔️ COMBAT";
-                        GUI.color = Color.red;
-                        break;
-                    case ArenaState.Ended:
-                        stateText = "🏆 ROUND END";
-                        GUI.color = Color.green;
-                        break;
-                    case ArenaState.Resetting:
-                        stateText = "🔄 RESETTING";
-                        GUI.color = Color.yellow;
-                        break;
-                }
-                
-                Widgets.Label(rect, stateText);
-                
-                GUI.color = Color.white;
-                Text.Font = GameFont.Small;
-                Text.Anchor = TextAnchor.UpperLeft;
-            }
-            catch
-            {
-                // Ignore any drawing errors
-            }
-        }
-
-        /// <summary>
-        /// Ensure our arena UI draws after main UI elements
-        /// </summary>
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(MapInterface), "MapInterfaceOnGUI_AfterMainTabs")]
-        public static void MapInterface_AfterMainTabs_Postfix()
-        {
-            if (!IsArenaActive())
-                return;
-            
-            try
-            {
-                var arenaComp = Find.CurrentMap?.GetComponent<MapComponent_SolWorldArena>();
-                if (arenaComp == null) return;
-
-                // Draw our arena UI on top
-                GUI.depth = -1000;
-                
-                ScoreboardUI.DrawScoreboard();
-                
-                if (arenaComp.IsPreviewActive)
-                {
-                    ScoreboardUI.DrawPreviewOverlay(arenaComp);
-                }
-                
-                GUI.depth = 0;
-            }
-            catch
-            {
-                // Ignore drawing errors
-            }
         }
     }
 
     /// <summary>
-    /// Manual UI patches that are applied conditionally to avoid errors
-    /// These patches are applied manually after checking if the target methods exist
+    /// Aggressive patches to completely suppress UI drawing
+    /// If methods exist, prevent them from drawing anything
     /// </summary>
     [StaticConstructorOnStartup]
-    public static class ConditionalUIPatches
+    public static class AggressiveUISupression
     {
-        static ConditionalUIPatches()
+        static AggressiveUISupression()
         {
-            var harmony = new Harmony("solworld.arena.conditionalui");
+            var harmony = new Harmony("solworld.arena.aggressive");
             
-            // Try to patch ResourceReadout if it exists
-            TryPatchResourceReadout(harmony);
+            Log.Message("SolWorld: Applying aggressive UI suppression patches...");
             
-            // Try to patch AlertsReadout if it exists  
-            TryPatchAlertsReadout(harmony);
+            // Use reflection to find and patch ANY method that might draw UI
+            SuppressAllUITypes(harmony);
             
-            // Try to patch LetterStack if it exists
-            TryPatchLetterStack(harmony);
-            
-            // Try to patch PlaySettings if it exists
-            TryPatchPlaySettings(harmony);
-            
-            // Try to patch MainTabsRoot if it exists
-            TryPatchMainTabs(harmony);
-            
-            // Try to patch Selector if it exists
-            TryPatchSelector(harmony);
-            
-            Log.Message("SolWorld: Conditional UI patches applied successfully");
+            Log.Message("SolWorld: Aggressive suppression complete");
         }
 
-        private static void TryPatchResourceReadout(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(ResourceReadout);
-                var targetMethod = targetType.GetMethod("ResourceReadoutOnGUI");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(ResourceReadout_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched ResourceReadout");
-                }
-                else
-                {
-                    Log.Message("SolWorld: ResourceReadout method not found - skipping patch");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch ResourceReadout: {ex.Message}");
-            }
-        }
-
-        private static void TryPatchAlertsReadout(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(AlertsReadout);
-                var targetMethod = targetType.GetMethod("AlertsReadoutOnGUI");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(AlertsReadout_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched AlertsReadout");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch AlertsReadout: {ex.Message}");
-            }
-        }
-
-        private static void TryPatchLetterStack(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(LetterStack);
-                var targetMethod = targetType.GetMethod("LettersOnGUI");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(LetterStack_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched LetterStack");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch LetterStack: {ex.Message}");
-            }
-        }
-
-        private static void TryPatchPlaySettings(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(PlaySettings);
-                var targetMethod = targetType.GetMethod("DoPlaySettingsGlobalControls");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(PlaySettings_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched PlaySettings");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch PlaySettings: {ex.Message}");
-            }
-        }
-
-        private static void TryPatchMainTabs(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(MainTabsRoot);
-                var targetMethod = targetType.GetMethod("MainTabsOnGUI");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(MainTabsRoot_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched MainTabsRoot");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch MainTabsRoot: {ex.Message}");
-            }
-        }
-
-        private static void TryPatchSelector(Harmony harmony)
-        {
-            try
-            {
-                var targetType = typeof(Selector);
-                var targetMethod = targetType.GetMethod("SelectionDrawerOnGUI");
-                
-                if (targetMethod != null)
-                {
-                    var prefixMethod = typeof(ConditionalUIPatches).GetMethod(nameof(Selector_Prefix), 
-                        System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-                    
-                    harmony.Patch(targetMethod, new HarmonyMethod(prefixMethod));
-                    Log.Message("SolWorld: Successfully patched Selector");
-                }
-            }
-            catch (System.Exception ex)
-            {
-                Log.Warning($"SolWorld: Could not patch Selector: {ex.Message}");
-            }
-        }
-
-        // Patch methods - these will only be called if the corresponding patches succeed
         private static bool IsArenaActive()
         {
             try
@@ -325,32 +316,44 @@ namespace SolWorldMod
             }
         }
 
-        private static bool ResourceReadout_Prefix()
+        private static void SuppressAllUITypes(Harmony harmony)
         {
-            return !IsArenaActive();
+            // List of UI types to completely suppress
+            var uiTypes = new[]
+            {
+                typeof(ResourceReadout),
+                typeof(AlertsReadout), 
+                typeof(LetterStack),
+                typeof(MainTabsRoot),
+                typeof(Selector),
+                typeof(MouseoverReadout),
+                typeof(PlaySettings)
+            };
+
+            foreach (var uiType in uiTypes)
+            {
+                try
+                {
+                    var methods = uiType.GetMethods();
+                    foreach (var method in methods)
+                    {
+                        if (method.Name.Contains("OnGUI") || 
+                            method.Name.Contains("Draw") || 
+                            method.Name.Contains("Render"))
+                        {
+                            harmony.Patch(method, prefix: new HarmonyMethod(typeof(AggressiveUISupression), nameof(SuppressUI)));
+                            Log.Message($"SolWorld: Suppressed {uiType.Name}.{method.Name}");
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Log.Warning($"SolWorld: Could not suppress {uiType.Name}: {ex.Message}");
+                }
+            }
         }
 
-        private static bool AlertsReadout_Prefix()
-        {
-            return !IsArenaActive();
-        }
-
-        private static bool LetterStack_Prefix()
-        {
-            return !IsArenaActive();
-        }
-
-        private static bool PlaySettings_Prefix()
-        {
-            return !IsArenaActive();
-        }
-
-        private static bool MainTabsRoot_Prefix()
-        {
-            return !IsArenaActive();
-        }
-
-        private static bool Selector_Prefix()
+        private static bool SuppressUI()
         {
             return !IsArenaActive();
         }
