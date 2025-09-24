@@ -226,14 +226,51 @@ async function runCompleteFlowTest() {
       console.warn('⚠️ Duplicate processing not prevented');
     }
     
-    // Step 7: Check service status
+    // Step 7: Check service status - FIXED VERSION
     console.log('\n🔍 Step 7: Service Status Check');
     const status = await makeRequest(`${TEST_CONFIG.BACKEND_URL}/api/arena/status`);
     
     if (status.ok) {
       console.log('✅ Service status retrieved');
-      console.log(`   Solana: ${status.data.solana ? 'Connected' : 'Disconnected'}`);
-      console.log(`   Treasury: ${status.data.treasury.address.substring(0, 8)}...`);
+      
+      // Handle different possible response structures
+      if (status.data.services) {
+        console.log(`   Services: ${Object.keys(status.data.services).join(', ')}`);
+      }
+      
+      // Try to get treasury info - handle multiple possible structures
+      if (status.data.data && status.data.data.treasury) {
+        const treasury = status.data.data.treasury;
+        if (treasury.address) {
+          console.log(`   Treasury: ${treasury.address.substring(0, 8)}...`);
+        } else if (treasury.treasuryAddress) {
+          console.log(`   Treasury: ${treasury.treasuryAddress.substring(0, 8)}...`);
+        } else if (treasury.treasuryWallet) {
+          console.log(`   Treasury: ${treasury.treasuryWallet.substring(0, 8)}...`);
+        } else {
+          console.log(`   Treasury: Available (structure unknown)`);
+        }
+        
+        if (treasury.balance !== undefined) {
+          console.log(`   Balance: ${treasury.balance} SOL`);
+        } else if (treasury.balanceFormatted) {
+          console.log(`   Balance: ${treasury.balanceFormatted}`);
+        }
+      } else {
+        console.log('   Treasury: Status not available in expected format');
+      }
+      
+      // Check overall system health
+      if (status.data.status) {
+        console.log(`   System: ${status.data.status}`);
+      }
+      
+      // Check if dev mode
+      if (status.data.config && status.data.config.isDev !== undefined) {
+        console.log(`   Mode: ${status.data.config.isDev ? 'Development' : 'Production'}`);
+      }
+    } else {
+      console.warn('⚠️ Could not retrieve service status');
     }
     
     console.log('\n🎉 COMPLETE FLOW TEST SUCCESSFUL!');

@@ -1,4 +1,4 @@
-// backend/src/services/treasury.ts
+// backend/src/services/treasury.ts - COMPLETE WITH DYNAMIC POOLS
 import { 
   Keypair, 
   Connection, 
@@ -31,9 +31,17 @@ export class TreasuryService {
   private connection: Connection;
   private treasuryKeypair: Keypair;
   private devWallet: PublicKey;
+  private transactionHistory: Array<{
+    type: 'split' | 'payout' | 'drain';
+    timestamp: number;
+    amount: number;
+    signature: string;
+    recipients?: number;
+  }>;
 
   constructor() {
     this.connection = new Connection(config.RPC_ENDPOINT, 'confirmed');
+    this.transactionHistory = [];
     
     try {
       // Initialize treasury keypair
@@ -43,9 +51,11 @@ export class TreasuryService {
       // Initialize dev wallet public key
       this.devWallet = new PublicKey(config.DEV_WALLET_ADDRESS);
       
-      console.log('Treasury service initialized:');
+      console.log('🏦 Treasury service initialized:');
       console.log('  Treasury:', this.treasuryKeypair.publicKey.toBase58());
       console.log('  Dev wallet:', this.devWallet.toBase58());
+      console.log('  Mode: Dynamic Pool Sizing');
+      console.log('  No funding required! ✅');
       
     } catch (error) {
       console.error('Failed to initialize treasury service:', error);
@@ -64,23 +74,31 @@ export class TreasuryService {
       const devAmount = claimedSol * (1 - config.PAYOUT_SPLIT_PERCENT);
       const treasuryAmount = claimedSol * config.PAYOUT_SPLIT_PERCENT;
 
-      console.log(`  Dev (${((1 - config.PAYOUT_SPLIT_PERCENT) * 100).toFixed(0)}%): ${devAmount.toFixed(6)} SOL`);
-      console.log(`  Treasury (${(config.PAYOUT_SPLIT_PERCENT * 100).toFixed(0)}%): ${treasuryAmount.toFixed(6)} SOL`);
+      console.log(`  💼 Dev (${((1 - config.PAYOUT_SPLIT_PERCENT) * 100).toFixed(0)}%): ${devAmount.toFixed(6)} SOL`);
+      console.log(`  🏦 Treasury (${(config.PAYOUT_SPLIT_PERCENT * 100).toFixed(0)}%): ${treasuryAmount.toFixed(6)} SOL`);
 
-      // Check treasury balance
+      // Check current treasury balance
       const currentBalance = await this.getTreasuryBalance();
-      console.log(`  Current treasury balance: ${currentBalance.toFixed(6)} SOL`);
+      console.log(`  💳 Current treasury balance: ${currentBalance.toFixed(6)} SOL`);
 
       // In development mode, simulate the transfer
       if (config.IS_DEV) {
-        console.log('🛠️ Development mode: Simulating transfer...');
+        console.log('🛠️ Development mode: Simulating split transfer...');
         
         const mockSignature = this.generateMockSignature();
         const newBalance = currentBalance + treasuryAmount;
-        
+
+        // Record mock transaction
+        this.transactionHistory.push({
+          type: 'split',
+          timestamp: Date.now(),
+          amount: devAmount,
+          signature: mockSignature
+        });
+
         console.log(`✅ Simulated split complete`);
-        console.log(`  Mock signature: ${mockSignature}`);
-        console.log(`  New treasury balance: ${newBalance.toFixed(6)} SOL`);
+        console.log(`  🎯 Mock signature: ${mockSignature}`);
+        console.log(`  💰 New treasury balance: ${newBalance.toFixed(6)} SOL`);
         
         return {
           success: true,
@@ -90,16 +108,39 @@ export class TreasuryService {
       }
 
       // Production mode: Execute actual transfers
-      // This would require the treasury to already have the claimed funds
-      // In practice, the claiming process would deposit directly to treasury
+      console.log('🚀 Production mode: Executing real split transfer...');
       
-      console.log('⚠️ Production mode: Actual transfers not implemented');
-      console.log('   In production, integrate with actual SOL transfers');
-      
-      return {
-        success: false,
-        error: 'Production transfers not implemented - integrate with Solana transfers'
-      };
+      try {
+        // Transfer dev portion to dev wallet
+        const signature = await this.transferSol(this.devWallet.toBase58(), devAmount);
+        
+        // The treasury portion stays in the treasury (no transfer needed)
+        const newBalance = await this.getTreasuryBalance();
+        
+        // Record real transaction
+        this.transactionHistory.push({
+          type: 'split',
+          timestamp: Date.now(),
+          amount: devAmount,
+          signature: signature
+        });
+
+        console.log(`✅ Split transfer complete`);
+        console.log(`  🎯 Transaction: ${signature}`);
+        console.log(`  💰 Treasury balance: ${newBalance.toFixed(6)} SOL`);
+        
+        return {
+          success: true,
+          devTransferSignature: signature,
+          treasuryBalance: newBalance
+        };
+      } catch (error) {
+        console.error('❌ Failed to execute split transfer:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown split error'
+        };
+      }
 
     } catch (error) {
       console.error('❌ Failed to split rewards:', error);
@@ -111,11 +152,12 @@ export class TreasuryService {
   }
 
   /**
-   * Pay winners from treasury balance
+   * Pay winners with dynamic per-winner amount (MAIN DYNAMIC METHOD)
    */
-  async payWinners(winnerWallets: string[]): Promise<PayoutResult> {
+  async payWinnersDynamic(winnerWallets: string[], perWinnerAmount: number): Promise<PayoutResult> {
     try {
-      console.log(`💸 Paying ${winnerWallets.length} winners from treasury...`);
+      console.log(`💸 Dynamic payout: ${winnerWallets.length} winners × ${perWinnerAmount.toFixed(6)} SOL each`);
+      console.log(`🎯 Total dynamic payout: ${(winnerWallets.length * perWinnerAmount).toFixed(6)} SOL`);
 
       // Validate input
       if (winnerWallets.length === 0) {
@@ -129,33 +171,75 @@ export class TreasuryService {
         };
       }
 
-      // Check treasury balance
-      const treasuryBalance = await this.getTreasuryBalance();
-      console.log(`💰 Treasury balance: ${treasuryBalance.toFixed(6)} SOL`);
-
-      // Calculate payout amounts
-      const totalPayout = config.roundPoolSol * config.PAYOUT_SPLIT_PERCENT;
-      const perWinner = totalPayout / winnerWallets.length;
-      
-      console.log(`📊 Payout calculation:`);
-      console.log(`  Total pool: ${config.roundPoolSol} SOL`);
-      console.log(`  Payout portion: ${(config.PAYOUT_SPLIT_PERCENT * 100)}%`);
-      console.log(`  Total payout: ${totalPayout.toFixed(6)} SOL`);
-      console.log(`  Per winner: ${perWinner.toFixed(6)} SOL`);
-
-      // Check if treasury has enough balance
-      const requiredBalance = totalPayout + config.GAS_RESERVE_SOL;
-      if (treasuryBalance < requiredBalance) {
+      if (perWinnerAmount <= 0) {
+        console.log('💫 No funds available for payouts this round');
         return {
-          success: false,
+          success: true,
           totalPaid: 0,
           perWinner: 0,
           signatures: [],
-          failedPayouts: winnerWallets,
-          error: `Insufficient treasury balance: ${treasuryBalance.toFixed(6)} SOL < ${requiredBalance.toFixed(6)} SOL required`
+          failedPayouts: [],
+          error: 'No funds available for payouts this round'
         };
       }
 
+      console.log(`🎯 Dynamic payout details:`);
+      console.log(`  💎 Per winner: ${perWinnerAmount.toFixed(6)} SOL`);
+      console.log(`  📊 Total winners: ${winnerWallets.length}`);
+      console.log(`  💰 Total payout: ${(perWinnerAmount * winnerWallets.length).toFixed(6)} SOL`);
+
+      // DEVELOPMENT MODE: Skip balance checks and simulate payouts
+      if (config.IS_DEV) {
+        console.log('🛠️ Development mode: Simulating dynamic payouts...');
+        
+        // Validate wallet formats (still good to check in dev mode)
+        const validWallets: string[] = [];
+        const invalidWallets: string[] = [];
+
+        for (const wallet of winnerWallets) {
+          try {
+            new PublicKey(wallet);
+            validWallets.push(wallet);
+          } catch {
+            console.warn(`⚠️ Invalid wallet address: ${wallet}`);
+            invalidWallets.push(wallet);
+          }
+        }
+
+        console.log(`✅ Valid wallets: ${validWallets.length}`);
+        if (invalidWallets.length > 0) {
+          console.warn(`❌ Invalid wallets: ${invalidWallets.length}`);
+        }
+        
+        const signatures = validWallets.map(() => this.generateMockSignature());
+        
+        console.log(`✅ Simulated ${validWallets.length} dynamic payouts`);
+        if (signatures.length > 0) {
+          console.log(`  🎯 Sample signature: ${signatures[0]}`);
+        }
+
+        // Record mock transaction
+        this.transactionHistory.push({
+          type: 'payout',
+          timestamp: Date.now(),
+          amount: validWallets.length * perWinnerAmount,
+          signature: signatures[0] || 'no-signatures',
+          recipients: validWallets.length
+        });
+        
+        return {
+          success: true,
+          totalPaid: validWallets.length * perWinnerAmount,
+          perWinner: perWinnerAmount,
+          signatures,
+          failedPayouts: invalidWallets
+        };
+      }
+
+      // PRODUCTION MODE: Execute real transfers (no balance pre-check needed)
+      console.log('🚀 Production mode: Executing dynamic payouts...');
+      console.log('   ℹ️ No balance pre-check - using dynamic amounts from actual claims');
+      
       // Validate all winner wallets
       const validWallets: string[] = [];
       const invalidWallets: string[] = [];
@@ -175,15 +259,120 @@ export class TreasuryService {
         console.warn(`❌ Invalid wallets: ${invalidWallets.length}`);
       }
 
-      // Execute payouts
+      // Execute real transfers
+      const signatures: string[] = [];
+      const failedPayouts: string[] = [];
+
+      for (const wallet of validWallets) {
+        try {
+          const signature = await this.transferSol(wallet, perWinnerAmount);
+          signatures.push(signature);
+          console.log(`✅ Paid ${wallet}: ${perWinnerAmount.toFixed(6)} SOL → ${signature}`);
+        } catch (error) {
+          console.error(`❌ Failed to pay ${wallet}:`, error);
+          failedPayouts.push(wallet);
+        }
+      }
+
+      const successfulPayouts = signatures.length;
+      const totalPaid = successfulPayouts * perWinnerAmount;
+
+      console.log(`📊 Dynamic payout summary:`);
+      console.log(`  ✅ Successful: ${successfulPayouts}/${validWallets.length}`);
+      console.log(`  💰 Total paid: ${totalPaid.toFixed(6)} SOL`);
+      console.log(`  ❌ Failed: ${failedPayouts.length}`);
+
+      // Record real transaction
+      if (signatures.length > 0) {
+        this.transactionHistory.push({
+          type: 'payout',
+          timestamp: Date.now(),
+          amount: totalPaid,
+          signature: signatures[0],
+          recipients: successfulPayouts
+        });
+      }
+
+      return {
+        success: failedPayouts.length === 0,
+        totalPaid,
+        perWinner: perWinnerAmount,
+        signatures,
+        failedPayouts: [...failedPayouts, ...invalidWallets]
+      };
+
+    } catch (error) {
+      console.error('❌ Critical error in dynamic payouts:', error);
+      return {
+        success: false,
+        totalPaid: 0,
+        perWinner: 0,
+        signatures: [],
+        failedPayouts: winnerWallets,
+        error: error instanceof Error ? error.message : 'Unknown payout error'
+      };
+    }
+  }
+
+  /**
+   * Pay winners from treasury balance - LEGACY METHOD (for backwards compatibility)
+   */
+  async payWinners(winnerWallets: string[]): Promise<PayoutResult> {
+    try {
+      console.log(`💸 Legacy payout: ${winnerWallets.length} winners from treasury...`);
+      console.log('⚠️ Note: Using legacy fixed-pool method. Consider switching to dynamic pools.');
+
+      // Validate input
+      if (winnerWallets.length === 0) {
+        return {
+          success: false,
+          totalPaid: 0,
+          perWinner: 0,
+          signatures: [],
+          failedPayouts: [],
+          error: 'No winner wallets provided'
+        };
+      }
+
+      // Calculate payout amounts using old fixed method
+      const totalPayout = config.roundPoolSol * config.PAYOUT_SPLIT_PERCENT;
+      const perWinner = totalPayout / winnerWallets.length;
+      
+      console.log(`📊 Legacy payout calculation:`);
+      console.log(`  📦 Total pool: ${config.roundPoolSol} SOL`);
+      console.log(`  💰 Payout portion: ${(config.PAYOUT_SPLIT_PERCENT * 100)}%`);
+      console.log(`  💎 Total payout: ${totalPayout.toFixed(6)} SOL`);
+      console.log(`  🏆 Per winner: ${perWinner.toFixed(6)} SOL`);
+
+      // DEVELOPMENT MODE: Skip balance checks and simulate payouts
       if (config.IS_DEV) {
-        // Development mode: Simulate payouts
-        console.log('🛠️ Development mode: Simulating payouts...');
+        console.log('🛠️ Development mode: Simulating legacy payouts...');
+        
+        // Validate wallet formats
+        const validWallets: string[] = [];
+        const invalidWallets: string[] = [];
+
+        for (const wallet of winnerWallets) {
+          try {
+            new PublicKey(wallet);
+            validWallets.push(wallet);
+          } catch {
+            console.warn(`⚠️ Invalid wallet address: ${wallet}`);
+            invalidWallets.push(wallet);
+          }
+        }
+
+        console.log(`✅ Valid wallets: ${validWallets.length}`);
+        if (invalidWallets.length > 0) {
+          console.warn(`❌ Invalid wallets: ${invalidWallets.length}`);
+        }
         
         const signatures = validWallets.map(() => this.generateMockSignature());
         
-        console.log(`✅ Simulated ${validWallets.length} payouts`);
-        console.log(`  Sample signature: ${signatures[0]}`);
+        console.log(`✅ Simulated ${validWallets.length} legacy payouts`);
+        if (signatures.length > 0) {
+          console.log(`  🎯 Sample signature: ${signatures[0]}`);
+        }
         
         return {
           success: true,
@@ -192,44 +381,37 @@ export class TreasuryService {
           signatures,
           failedPayouts: invalidWallets
         };
+      }
+
+      // PRODUCTION MODE: Check balance and execute real transfers
+      console.log('🚀 Production mode: Executing legacy payouts...');
+      
+      // Check treasury balance (required for legacy method)
+      const treasuryBalance = await this.getTreasuryBalance();
+      console.log(`💰 Treasury balance: ${treasuryBalance.toFixed(6)} SOL`);
+
+      const requiredBalance = totalPayout + config.GAS_RESERVE_SOL;
+      if (treasuryBalance < requiredBalance) {
+        console.error(`❌ Insufficient treasury balance for legacy payouts`);
+        console.error(`   Required: ${requiredBalance.toFixed(6)} SOL`);
+        console.error(`   Available: ${treasuryBalance.toFixed(6)} SOL`);
+        console.error(`   💡 Suggestion: Switch to dynamic pools to eliminate funding requirements`);
         
-      } else {
-        // Production mode: Execute real transfers
-        console.log('🚀 Production mode: Executing real payouts...');
-        
-        const signatures: string[] = [];
-        const failedPayouts: string[] = [];
-
-        for (const wallet of validWallets) {
-          try {
-            const signature = await this.transferSol(wallet, perWinner);
-            signatures.push(signature);
-            console.log(`✅ Paid ${wallet}: ${signature}`);
-          } catch (error) {
-            console.error(`❌ Failed to pay ${wallet}:`, error);
-            failedPayouts.push(wallet);
-          }
-        }
-
-        const successfulPayouts = signatures.length;
-        const totalPaid = successfulPayouts * perWinner;
-
-        console.log(`📊 Payout summary:`);
-        console.log(`  Successful: ${successfulPayouts}/${validWallets.length}`);
-        console.log(`  Total paid: ${totalPaid.toFixed(6)} SOL`);
-        console.log(`  Failed: ${failedPayouts.length}`);
-
         return {
-          success: failedPayouts.length === 0,
-          totalPaid,
-          perWinner,
-          signatures,
-          failedPayouts: [...failedPayouts, ...invalidWallets]
+          success: false,
+          totalPaid: 0,
+          perWinner: 0,
+          signatures: [],
+          failedPayouts: winnerWallets,
+          error: `Insufficient treasury balance: ${treasuryBalance.toFixed(6)} SOL < ${requiredBalance.toFixed(6)} SOL required`
         };
       }
 
+      // Execute the same logic as dynamic method
+      return this.payWinnersDynamic(winnerWallets, perWinner);
+
     } catch (error) {
-      console.error('❌ Critical error in payWinners:', error);
+      console.error('❌ Critical error in legacy payouts:', error);
       return {
         success: false,
         totalPaid: 0,
@@ -294,6 +476,48 @@ export class TreasuryService {
   }
 
   /**
+   * Get transaction history for monitoring
+   */
+  getTransactionHistory(limit: number = 20) {
+    return this.transactionHistory.slice(-limit).map(tx => ({
+      ...tx,
+      timestampFormatted: new Date(tx.timestamp).toISOString(),
+      amountFormatted: tx.amount.toFixed(6) + ' SOL'
+    }));
+  }
+
+  /**
+   * Get treasury statistics
+   */
+  async getTreasuryStats() {
+    try {
+      const balance = await this.getTreasuryBalance();
+      const recentTransactions = this.transactionHistory.slice(-10);
+      const totalPayoutAmount = recentTransactions
+        .filter(tx => tx.type === 'payout')
+        .reduce((sum, tx) => sum + tx.amount, 0);
+      const totalSplitAmount = recentTransactions
+        .filter(tx => tx.type === 'split')
+        .reduce((sum, tx) => sum + tx.amount, 0);
+
+      return {
+        currentBalance: balance,
+        balanceFormatted: balance.toFixed(6) + ' SOL',
+        recentTransactions: recentTransactions.length,
+        totalRecentPayouts: totalPayoutAmount,
+        totalRecentSplits: totalSplitAmount,
+        systemType: 'Dynamic Pool Treasury',
+        fundingRequired: false,
+        sustainable: true
+      };
+    } catch (error) {
+      return {
+        error: error instanceof Error ? error.message : 'Failed to get treasury stats'
+      };
+    }
+  }
+
+  /**
    * Emergency drain treasury to dev wallet
    */
   async emergencyDrain(): Promise<{ success: boolean; signature?: string; error?: string }> {
@@ -306,22 +530,42 @@ export class TreasuryService {
       if (drainAmount <= 0) {
         return {
           success: false,
-          error: 'Insufficient balance to drain'
+          error: `Insufficient balance to drain (${balance.toFixed(6)} SOL available, ${config.GAS_RESERVE_SOL} SOL gas reserve required)`
         };
       }
 
       if (config.IS_DEV) {
         console.log(`🛠️ Would drain ${drainAmount.toFixed(6)} SOL to dev wallet`);
+        const mockSignature = this.generateMockSignature();
+        
+        // Record mock drain
+        this.transactionHistory.push({
+          type: 'drain',
+          timestamp: Date.now(),
+          amount: drainAmount,
+          signature: mockSignature
+        });
+        
         return {
           success: true,
-          signature: this.generateMockSignature()
+          signature: mockSignature
         };
       }
 
       // Execute actual drain in production
       const signature = await this.transferSol(this.devWallet.toBase58(), drainAmount);
       
+      // Record real drain
+      this.transactionHistory.push({
+        type: 'drain',
+        timestamp: Date.now(),
+        amount: drainAmount,
+        signature: signature
+      });
+      
       console.log(`✅ Emergency drain complete: ${signature}`);
+      console.log(`   Drained: ${drainAmount.toFixed(6)} SOL`);
+      
       return { success: true, signature };
 
     } catch (error) {
@@ -351,6 +595,7 @@ export class TreasuryService {
   async testService(): Promise<{ success: boolean; details: any }> {
     try {
       const treasuryBalance = await this.getTreasuryBalance();
+      const stats = await this.getTreasuryStats();
       
       return {
         success: true,
@@ -360,9 +605,12 @@ export class TreasuryService {
           treasuryBalance: treasuryBalance.toFixed(6) + ' SOL',
           gasReserve: config.GAS_RESERVE_SOL + ' SOL',
           payoutSplit: (config.PAYOUT_SPLIT_PERCENT * 100) + '%',
-          roundPool: config.roundPoolSol + ' SOL',
+          systemType: 'Dynamic Pool Treasury',
+          fundingRequired: false,
           connection: this.connection.rpcEndpoint,
-          mode: config.IS_DEV ? 'Development (Mock)' : 'Production'
+          mode: config.IS_DEV ? 'Development (Mock)' : 'Production',
+          recentActivity: this.getTransactionHistory(5),
+          stats: stats
         }
       };
     } catch (error) {
@@ -386,7 +634,11 @@ export class TreasuryService {
       rpcEndpoint: this.connection.rpcEndpoint,
       payoutSplit: config.PAYOUT_SPLIT_PERCENT,
       gasReserve: config.GAS_RESERVE_SOL,
-      mode: config.IS_DEV ? 'development' : 'production'
+      mode: config.IS_DEV ? 'development' : 'production',
+      systemType: 'Dynamic Pool Treasury',
+      fundingRequired: false,
+      sustainable: true,
+      transactionHistory: this.transactionHistory.length
     };
   }
 }

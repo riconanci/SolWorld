@@ -1,5 +1,10 @@
-// backend/src/services/pumpportal.ts
-import { Keypair, Connection, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
+// backend/src/services/pumpportal.ts - PRODUCTION VERSION
+import { 
+  Keypair, 
+  Connection, 
+  VersionedTransaction,
+  sendAndConfirmTransaction
+} from '@solana/web3.js';
 import bs58 from 'bs58';
 import config from '../env.js';
 
@@ -19,6 +24,7 @@ export interface PendingFeesResult {
 export class PumpPortalService {
   private connection: Connection;
   private creatorKeypair: Keypair;
+  private readonly PUMPPORTAL_LOCAL_API = 'https://pumpportal.fun/api/trade-local';
 
   constructor() {
     this.connection = new Connection(config.RPC_ENDPOINT, 'confirmed');
@@ -34,41 +40,101 @@ export class PumpPortalService {
   }
 
   /**
-   * Claim creator fees from pump.fun via PumpPortal API
+   * Claim creator fees from pump.fun using PumpPortal Local Transaction API
    */
   async claimCreatorFees(): Promise<ClaimResult> {
     try {
-      console.log('💰 Claiming creator fees from pump.fun...');
+      console.log('💰 Claiming creator fees from pump.fun via PumpPortal...');
 
-      // Check if there are pending fees first
-      const pendingCheck = await this.checkPendingFees();
-      if (!pendingCheck.success || pendingCheck.pendingSol <= 0.001) {
-        console.log('ℹ️ No significant pending fees to claim');
+      // Development mode: Use mock claiming
+      if (config.IS_DEV) {
+        return this.simulateClaimProcess();
+      }
+
+      // Production mode: Real PumpPortal API integration
+      console.log('🚀 Production mode: Using real PumpPortal API');
+
+      // Step 1: Get balance before claiming
+      const balanceBefore = await this.getCreatorBalance();
+      console.log(`💼 Creator balance before: ${balanceBefore.toFixed(6)} SOL`);
+
+      // Step 2: Request claim transaction from PumpPortal
+      console.log('🔄 Requesting claim transaction from PumpPortal...');
+      
+      const claimResponse = await fetch(this.PUMPPORTAL_LOCAL_API, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          publicKey: this.creatorKeypair.publicKey.toBase58(),
+          action: 'collectCreatorFee',
+          priorityFee: 0.000001, // 0.000001 SOL priority fee
+          // Note: pump.fun claims ALL creator fees at once, no need to specify mint
+        })
+      });
+
+      if (!claimResponse.ok) {
+        const errorText = await claimResponse.text();
+        console.error('❌ PumpPortal API error:', claimResponse.status, errorText);
+        
+        // If no fees to claim, return success with 0
+        if (errorText.includes('no fees') || errorText.includes('nothing to claim')) {
+          return {
+            success: true,
+            claimedSol: 0,
+            error: 'No creator fees available to claim'
+          };
+        }
+        
+        throw new Error(`PumpPortal API error: ${claimResponse.status} ${errorText}`);
+      }
+
+      // Step 3: Get unsigned transaction from response
+      const transactionBytes = await claimResponse.arrayBuffer();
+      console.log('📝 Received unsigned transaction from PumpPortal');
+
+      // Step 4: Sign and send transaction
+      console.log('✍️ Signing and sending claim transaction...');
+      
+      const unsignedTx = VersionedTransaction.deserialize(new Uint8Array(transactionBytes));
+      unsignedTx.sign([this.creatorKeypair]);
+
+      const signature = await this.connection.sendTransaction(unsignedTx, {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+      });
+
+      console.log('⏳ Confirming transaction...');
+      await this.connection.confirmTransaction({
+        signature,
+        blockhash: unsignedTx.message.recentBlockhash!,
+        lastValidBlockHeight: await this.connection.getBlockHeight() + 150,
+      });
+
+      // Step 5: Calculate claimed amount
+      const balanceAfter = await this.getCreatorBalance();
+      const claimedAmount = balanceAfter - balanceBefore;
+
+      if (claimedAmount > 0) {
+        console.log(`✅ Successfully claimed ${claimedAmount.toFixed(6)} SOL`);
+        console.log(`   Transaction: ${signature}`);
+        console.log(`   Creator balance after: ${balanceAfter.toFixed(6)} SOL`);
+        
+        return {
+          success: true,
+          claimedSol: claimedAmount,
+          signature
+        };
+      } else {
+        console.log('ℹ️ No fees were claimed (balance unchanged)');
         return {
           success: true,
           claimedSol: 0,
-          error: 'No pending fees to claim'
+          signature,
+          error: 'No fees were available to claim'
         };
       }
-
-      console.log(`📊 Pending fees: ${pendingCheck.pendingSol.toFixed(6)} SOL`);
-
-      // In a real implementation, this would:
-      // 1. Call PumpPortal API to get claim transaction
-      // 2. Sign and submit the transaction
-      // 3. Return the result
-      
-      // For now, we'll simulate the claim process
-      const claimResult = await this.simulateClaimProcess(pendingCheck.pendingSol);
-      
-      if (claimResult.success) {
-        console.log(`✅ Successfully claimed ${claimResult.claimedSol.toFixed(6)} SOL`);
-        console.log(`   Transaction: ${claimResult.signature}`);
-      } else {
-        console.error('❌ Failed to claim fees:', claimResult.error);
-      }
-
-      return claimResult;
 
     } catch (error) {
       console.error('❌ Error claiming creator fees:', error);
@@ -81,28 +147,31 @@ export class PumpPortalService {
   }
 
   /**
-   * Check pending creator fees
+   * Check pending creator fees (estimation)
+   * Note: PumpPortal doesn't have a direct "check pending" endpoint,
+   * so we'll estimate based on recent activity or return a small amount
    */
   async checkPendingFees(): Promise<PendingFeesResult> {
     try {
-      console.log('🔍 Checking pending creator fees...');
+      console.log('🔍 Checking potential pending creator fees...');
 
-      // In production, this would call PumpPortal API:
-      // const response = await fetch(`${config.PUMPPORTAL_BASE_URL}/fees/pending`, {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify({
-      //     mint: config.TEST_TOKEN_MINT,
-      //     creator: this.creatorKeypair.publicKey.toBase58()
-      //   })
-      // });
+      if (config.IS_DEV) {
+        // Development: simulate pending fees
+        const simulatedPending = Math.random() * 1.9 + 0.1;
+        return {
+          success: true,
+          pendingSol: simulatedPending
+        };
+      }
 
-      // For development, simulate pending fees
-      const simulatedPending = await this.simulatePendingFees();
-
+      // Production: Since pump.fun doesn't provide a direct pending check,
+      // we'll assume there might be fees and let the claim attempt determine
+      // if there's actually anything to claim
+      console.log('📊 Production mode: Will attempt claim to check for fees');
+      
       return {
         success: true,
-        pendingSol: simulatedPending
+        pendingSol: 0.01 // Minimal estimate - actual amount determined during claim
       };
 
     } catch (error) {
@@ -137,30 +206,24 @@ export class PumpPortalService {
 
   /**
    * Simulate claiming process (for development/testing)
-   * In production, this would be replaced with actual PumpPortal API calls
    */
-  private async simulateClaimProcess(pendingAmount: number): Promise<ClaimResult> {
+  private async simulateClaimProcess(): Promise<ClaimResult> {
     try {
+      console.log('🛠️ Development mode: Simulating pump.fun fee claim...');
+      
       // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
-      // In development mode, simulate a successful claim
-      if (config.IS_DEV) {
-        const mockSignature = this.generateMockSignature();
-        
-        return {
-          success: true,
-          claimedSol: pendingAmount,
-          signature: mockSignature
-        };
-      }
-
-      // In production, this would make the actual API call
-      // and handle the real transaction
+      const simulatedAmount = Math.random() * 1.9 + 0.1; // 0.1 to 2.0 SOL
+      const mockSignature = this.generateMockSignature();
+      
+      console.log(`✅ Simulated claim: ${simulatedAmount.toFixed(6)} SOL`);
+      console.log(`   Mock signature: ${mockSignature}`);
+      
       return {
-        success: false,
-        claimedSol: 0,
-        error: 'Production claiming not implemented - integrate with PumpPortal API'
+        success: true,
+        claimedSol: simulatedAmount,
+        signature: mockSignature
       };
 
     } catch (error) {
@@ -170,19 +233,6 @@ export class PumpPortalService {
         error: error instanceof Error ? error.message : 'Simulation failed'
       };
     }
-  }
-
-  /**
-   * Simulate pending fees (for development)
-   */
-  private async simulatePendingFees(): Promise<number> {
-    // In development, return a random amount between 0.1 and 2.0 SOL
-    if (config.IS_DEV) {
-      return Math.random() * 1.9 + 0.1;
-    }
-
-    // In production, this would query the actual PumpPortal API
-    return 0;
   }
 
   /**
@@ -212,7 +262,8 @@ export class PumpPortalService {
           creatorBalance: creatorBalance.toFixed(6) + ' SOL',
           pendingFees: pendingFees.success ? pendingFees.pendingSol.toFixed(6) + ' SOL' : 'Error',
           connection: this.connection.rpcEndpoint,
-          mode: config.IS_DEV ? 'Development (Mock)' : 'Production'
+          mode: config.IS_DEV ? 'Development (Mock)' : 'Production (Real PumpPortal)',
+          api: config.IS_DEV ? 'Mock simulation' : this.PUMPPORTAL_LOCAL_API
         }
       };
     } catch (error) {
@@ -230,8 +281,8 @@ export class PumpPortalService {
    */
   async estimateClaimGasCost(): Promise<number> {
     try {
-      // Typical claim transaction costs around 0.000005 SOL
-      return 0.000005;
+      // PumpPortal claiming typically costs around 0.000006 SOL + priority fee
+      return 0.000001 + 0.000006; // priority + base fee
     } catch (error) {
       console.error('Failed to estimate gas cost:', error);
       return 0.00001; // Conservative estimate
@@ -246,7 +297,16 @@ export class PumpPortalService {
       const balance = await this.getCreatorBalance();
       const estimatedGas = await this.estimateClaimGasCost();
       
-      return balance >= (estimatedGas + 0.001); // Add small buffer
+      const needed = estimatedGas + 0.001; // Add small buffer
+      const hasEnough = balance >= needed;
+      
+      if (!hasEnough) {
+        console.warn(`⚠️ Creator wallet might not have enough SOL for gas:`);
+        console.warn(`   Current: ${balance.toFixed(6)} SOL`);
+        console.warn(`   Needed: ${needed.toFixed(6)} SOL`);
+      }
+      
+      return hasEnough;
     } catch (error) {
       console.error('Failed to check gas balance:', error);
       return false;
@@ -263,7 +323,8 @@ export class PumpPortalService {
       rpcEndpoint: this.connection.rpcEndpoint,
       tokenMint: config.TEST_TOKEN_MINT,
       mode: config.IS_DEV ? 'development' : 'production',
-      baseUrl: config.PUMPPORTAL_BASE_URL
+      apiEndpoint: config.IS_DEV ? 'mock' : this.PUMPPORTAL_LOCAL_API,
+      integration: 'Local Transaction API'
     };
   }
 }

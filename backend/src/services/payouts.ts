@@ -1,4 +1,4 @@
-// backend/src/services/payouts.ts
+// backend/src/services/payouts.ts - DYNAMIC POOL VERSION (Complete 378+ lines)
 import PumpPortalService from './pumpportal';
 import TreasuryService from './treasury';
 import config from '../env';
@@ -59,21 +59,33 @@ export class PayoutService {
   private pumpPortal: PumpPortalService;
   private treasury: TreasuryService;
   private processedMatches: Set<string>;
+  private roundHistory: Array<{
+    matchId: string;
+    timestamp: number;
+    claimed: number;
+    paid: number;
+    perWinner: number;
+  }>;
 
   constructor() {
     this.pumpPortal = new PumpPortalService();
     this.treasury = new TreasuryService();
     this.processedMatches = new Set();
+    this.roundHistory = [];
     
-    console.log('Payout service initialized');
+    console.log('🎯 Dynamic Payout Service initialized');
+    console.log('   ✅ Pool size scales with actual pump.fun claims');
+    console.log('   ✅ No treasury funding required');
+    console.log('   ✅ 100% sustainable operation');
   }
 
   /**
-   * Process arena results and execute payouts
+   * Process arena results with dynamic pool sizing
    */
   async processArenaResult(report: ArenaReportPayload): Promise<PayoutResult> {
     const startTime = Date.now();
     console.log(`💰 Processing arena result for match ${report.matchId}...`);
+    console.log('🎯 Using DYNAMIC POOL sizing based on actual claims');
     
     // Initialize result structure
     const result: PayoutResult = {
@@ -91,6 +103,7 @@ export class PayoutService {
     try {
       // Prevent duplicate processing
       if (this.processedMatches.has(report.matchId)) {
+        console.warn(`⚠️ Match ${report.matchId} already processed`);
         result.error = 'Match already processed';
         return result;
       }
@@ -98,6 +111,7 @@ export class PayoutService {
       // Validate report structure
       const validation = this.validateReport(report);
       if (!validation.valid) {
+        console.error('❌ Invalid report structure:', validation.error);
         result.error = validation.error;
         return result;
       }
@@ -105,15 +119,21 @@ export class PayoutService {
       // Get winner wallets
       const winnerWallets = this.extractWinnerWallets(report);
       if (winnerWallets.length === 0) {
-        result.error = 'No winners found (tie or invalid data)';
+        console.log('🤝 Tie game - no payouts needed');
+        result.error = 'Tie game - no winners to pay';
+        result.success = true; // This is actually successful
+        this.processedMatches.add(report.matchId);
         return result;
       }
 
       console.log(`🏆 ${report.winner} team wins! Processing ${winnerWallets.length} winner payouts...`);
 
+      // ========================================================================
       // PHASE 1: Claim creator fees from pump.fun
-      console.log('📥 Phase 1: Claiming creator fees...');
+      // ========================================================================
+      console.log('📥 Phase 1: Claiming creator fees from pump.fun...');
       const claimResult = await this.pumpPortal.claimCreatorFees();
+      
       result.processing.claimed = {
         success: claimResult.success,
         amount: claimResult.claimedSol,
@@ -121,32 +141,47 @@ export class PayoutService {
         error: claimResult.error
       };
 
-      if (!claimResult.success) {
-        console.warn('⚠️ Failed to claim fees, continuing with existing treasury balance');
-      } else {
-        console.log(`✅ Claimed ${claimResult.claimedSol?.toFixed(6)} SOL from pump.fun`);
+      let totalClaimedThisRound = 0;
+      
+      if (claimResult.success && claimResult.claimedSol > 0.001) {
+        totalClaimedThisRound = claimResult.claimedSol;
+        console.log(`✅ Claimed ${totalClaimedThisRound.toFixed(6)} SOL from pump.fun`);
         
         // Add claim signature to txids
         if (claimResult.signature) {
           result.txids.push(claimResult.signature);
         }
+      } else {
+        console.log('ℹ️ No creator fees available this round');
       }
 
-      // PHASE 2: Split claimed funds (80% dev, 20% treasury) - only if we claimed something
-      if (claimResult.success && claimResult.claimedSol && claimResult.claimedSol > 0.001) {
+      // ========================================================================
+      // PHASE 2: Split claimed funds (80% dev, 20% treasury) 
+      // ========================================================================
+      let treasuryAdditionThisRound = 0;
+      
+      if (totalClaimedThisRound > 0.001) {
         console.log('🔄 Phase 2: Splitting claimed rewards...');
-        const splitResult = await this.treasury.splitRewards(claimResult.claimedSol);
+        
+        const devAmount = totalClaimedThisRound * (1 - config.PAYOUT_SPLIT_PERCENT);
+        treasuryAdditionThisRound = totalClaimedThisRound * config.PAYOUT_SPLIT_PERCENT;
+        
+        console.log(`   💼 Dev gets: ${devAmount.toFixed(6)} SOL (${((1 - config.PAYOUT_SPLIT_PERCENT) * 100).toFixed(0)}%)`);
+        console.log(`   🏦 Treasury gets: ${treasuryAdditionThisRound.toFixed(6)} SOL (${(config.PAYOUT_SPLIT_PERCENT * 100).toFixed(0)}%)`);
+        
+        const splitResult = await this.treasury.splitRewards(totalClaimedThisRound);
+        
         result.processing.split = {
           success: splitResult.success,
-          devAmount: claimResult.claimedSol * (1 - config.PAYOUT_SPLIT_PERCENT),
-          treasuryAmount: claimResult.claimedSol * config.PAYOUT_SPLIT_PERCENT,
+          devAmount: devAmount,
+          treasuryAmount: treasuryAdditionThisRound,
           signature: splitResult.devTransferSignature,
           error: splitResult.error
         };
 
         if (!splitResult.success) {
           console.error('❌ Failed to split rewards:', splitResult.error);
-          result.error = 'Failed to split claimed rewards';
+          result.error = 'Failed to split claimed rewards: ' + splitResult.error;
           return result;
         }
 
@@ -162,41 +197,97 @@ export class PayoutService {
           success: true,
           devAmount: 0,
           treasuryAmount: 0,
-          error: 'No new funds to split'
+          error: 'No new funds to split this round'
         };
       }
 
-      // PHASE 3: Pay winners from treasury
-      console.log('💸 Phase 3: Paying winners from treasury...');
-      const payoutResult = await this.treasury.payWinners(winnerWallets);
-      result.processing.payout = {
-        success: payoutResult.success,
-        totalPaid: payoutResult.totalPaid,
-        perWinner: payoutResult.perWinner,
-        signatures: payoutResult.signatures,
-        failedPayouts: payoutResult.failedPayouts,
-        error: payoutResult.error
-      };
+      // ========================================================================
+      // PHASE 3: Dynamic Pool Calculation & Winner Payouts
+      // ========================================================================
+      console.log('🎯 Phase 3: Calculating dynamic pool and paying winners...');
+      
+      if (treasuryAdditionThisRound > 0.001) {
+        // DYNAMIC POOL: Use exactly what was added to treasury this round
+        const dynamicPoolSize = treasuryAdditionThisRound;
+        const perWinnerAmount = dynamicPoolSize / winnerWallets.length;
+        
+        console.log(`💎 DYNAMIC POOL this round: ${dynamicPoolSize.toFixed(6)} SOL`);
+        console.log(`🏆 Per winner payout: ${perWinnerAmount.toFixed(6)} SOL`);
+        console.log(`📊 Winners: ${winnerWallets.length} wallets`);
+        
+        // Pay winners using the dynamic amount
+        const payoutResult = await this.treasury.payWinnersDynamic(winnerWallets, perWinnerAmount);
+        
+        result.processing.payout = {
+          success: payoutResult.success,
+          totalPaid: payoutResult.totalPaid,
+          perWinner: payoutResult.perWinner,
+          signatures: payoutResult.signatures,
+          failedPayouts: payoutResult.failedPayouts,
+          error: payoutResult.error
+        };
 
-      if (!payoutResult.success) {
-        console.error('❌ Failed to pay winners:', payoutResult.error);
-        result.error = 'Failed to pay winners: ' + payoutResult.error;
-        return result;
+        if (!payoutResult.success) {
+          console.error('❌ Failed to pay winners:', payoutResult.error);
+          result.error = 'Failed to pay winners: ' + payoutResult.error;
+          return result;
+        }
+
+        // Add payout signatures to txids
+        if (payoutResult.signatures) {
+          result.txids.push(...payoutResult.signatures);
+        }
+
+        const successfulPayouts = winnerWallets.length - (payoutResult.failedPayouts?.length || 0);
+        console.log(`✅ Paid ${payoutResult.totalPaid.toFixed(6)} SOL to ${successfulPayouts} winners`);
+        console.log(`   Per winner: ${payoutResult.perWinner.toFixed(6)} SOL`);
+        
+        // Record this round in history
+        this.roundHistory.push({
+          matchId: report.matchId,
+          timestamp: Date.now(),
+          claimed: totalClaimedThisRound,
+          paid: payoutResult.totalPaid,
+          perWinner: payoutResult.perWinner
+        });
+        
+        // Keep only last 100 rounds
+        if (this.roundHistory.length > 100) {
+          this.roundHistory = this.roundHistory.slice(-100);
+        }
+        
+      } else {
+        // No fees claimed this round = no payouts
+        console.log('💫 No creator fees claimed this round → No payouts this round');
+        console.log('   🎮 Arena was still fun! Better luck next round!');
+        
+        result.processing.payout = {
+          success: true,
+          totalPaid: 0,
+          perWinner: 0,
+          signatures: [],
+          failedPayouts: [],
+          error: 'No fees available - no payouts this round (but arena was successful!)'
+        };
+        
+        // Still record the round
+        this.roundHistory.push({
+          matchId: report.matchId,
+          timestamp: Date.now(),
+          claimed: 0,
+          paid: 0,
+          perWinner: 0
+        });
       }
-
-      // Add payout signatures to txids
-      result.txids.push(...payoutResult.signatures);
-
-      console.log(`✅ Paid ${payoutResult.totalPaid.toFixed(6)} SOL to ${winnerWallets.length - payoutResult.failedPayouts.length} winners`);
-      console.log(`   Per winner: ${payoutResult.perWinner.toFixed(6)} SOL`);
 
       // Mark as successfully processed
       this.processedMatches.add(report.matchId);
       result.success = true;
 
       const processingTime = Date.now() - startTime;
-      console.log(`🎯 Arena payout complete for ${report.matchId} in ${processingTime}ms`);
+      console.log(`🎯 Dynamic pool arena complete for ${report.matchId} in ${processingTime}ms`);
       console.log(`   Total transactions: ${result.txids.length}`);
+      console.log(`   System status: 100% sustainable! 🌱`);
 
       return result;
 
@@ -264,7 +355,7 @@ export class PayoutService {
 
     const winningTeam = report.winner === 'Red' ? report.red : report.blue;
     
-    // Return all wallets from winning team (dead or alive)
+    // Return all wallets from winning team (dead or alive get paid)
     return winningTeam.map(fighter => fighter.wallet);
   }
 
@@ -272,8 +363,21 @@ export class PayoutService {
    * Get processing statistics for monitoring
    */
   getStats() {
+    const recentRounds = this.roundHistory.slice(-20); // Last 20 rounds
+    const totalClaimed = recentRounds.reduce((sum, r) => sum + r.claimed, 0);
+    const totalPaid = recentRounds.reduce((sum, r) => sum + r.paid, 0);
+    const avgPerWinner = recentRounds.length > 0 
+      ? recentRounds.reduce((sum, r) => sum + r.perWinner, 0) / recentRounds.length 
+      : 0;
+    
     return {
       processedMatches: this.processedMatches.size,
+      recentRounds: recentRounds.length,
+      totalClaimedRecent: totalClaimed,
+      totalPaidRecent: totalPaid,
+      avgPerWinnerRecent: avgPerWinner,
+      systemType: 'Dynamic Pool (Sustainable)',
+      treasuryFundingRequired: false,
       services: {
         pumpPortal: 'initialized',
         treasury: 'initialized'
@@ -281,9 +385,21 @@ export class PayoutService {
       config: {
         payoutSplit: config.PAYOUT_SPLIT_PERCENT,
         gasReserve: config.GAS_RESERVE_SOL,
-        roundPool: config.roundPoolSol
+        dynamicScaling: true
       }
     };
+  }
+
+  /**
+   * Get recent round history for analysis
+   */
+  getRoundHistory(limit: number = 10) {
+    return this.roundHistory.slice(-limit).map(round => ({
+      ...round,
+      claimedFormatted: round.claimed.toFixed(6) + ' SOL',
+      paidFormatted: round.paid.toFixed(6) + ' SOL',
+      perWinnerFormatted: round.perWinner.toFixed(6) + ' SOL'
+    }));
   }
 
   /**
@@ -294,19 +410,23 @@ export class PayoutService {
   }
 
   /**
-   * Get treasury balance for monitoring
+   * Get treasury status for monitoring
    */
   async getTreasuryStatus() {
     try {
       const balance = await this.treasury.getTreasuryBalance();
       const address = this.treasury.getTreasuryAddress();
       
+      // With dynamic sizing, we don't need a minimum balance
       return {
         address,
         balance,
         balanceFormatted: balance.toFixed(6) + ' SOL',
-        canPayout: balance > config.GAS_RESERVE_SOL,
-        estimatedPayouts: Math.floor((balance - config.GAS_RESERVE_SOL) / (config.roundPoolSol * config.PAYOUT_SPLIT_PERCENT / 10))
+        systemType: 'Dynamic Pool',
+        fundingRequired: false,
+        sustainable: true,
+        estimatedRoundsWithCurrentBalance: 'Unlimited (scales with claims)',
+        recentActivity: this.getRoundHistory(5)
       };
     } catch (error) {
       return {
@@ -343,12 +463,12 @@ export class PayoutService {
         kills: Math.floor(Math.random() * 5),
         alive: Math.random() > 0.3
       })),
-      roundRewardTotalSol: 1.0,
-      payoutPercent: 0.2,
+      roundRewardTotalSol: 0, // Dynamic sizing - this gets calculated
+      payoutPercent: config.PAYOUT_SPLIT_PERCENT,
       ...mockReport
     };
 
-    console.log('🧪 Testing payout flow with mock data...');
+    console.log('🧪 Testing dynamic payout flow with mock data...');
     
     try {
       // Just validate - don't actually process
@@ -363,7 +483,9 @@ export class PayoutService {
           team: testReport.winner,
           sampleWallet: winners[0]?.slice(0, 10) + '...'
         },
-        processing: 'skipped (test mode)'
+        systemType: 'Dynamic Pool Sizing',
+        processing: 'skipped (test mode)',
+        note: 'Pool size will scale with actual pump.fun claims'
       };
       
     } catch (error) {
