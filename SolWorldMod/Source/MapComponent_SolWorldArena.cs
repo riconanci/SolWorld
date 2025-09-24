@@ -273,6 +273,15 @@ namespace SolWorldMod
             lastCombatEnforcementTick = Find.TickManager.TicksGame;
             lastAggressiveEnforcementTick = Find.TickManager.TicksGame;
             
+            // ADD THIS UNPAUSE CODE HERE:
+            Log.Message("SolWorld: Unpausing game for combat...");
+            Find.TickManager.CurTimeSpeed = TimeSpeed.Normal;
+            if (Find.TickManager.Paused)
+            {
+                Find.TickManager.TogglePaused();
+            }
+            Log.Message($"SolWorld: Game unpaused - Speed: {Find.TickManager.CurTimeSpeed}, Paused: {Find.TickManager.Paused}");
+            
             // Reset pawn action tracking
             pawnLastActionTick.Clear();
             foreach (var pawn in redTeamPawns.Concat(blueTeamPawns).Where(p => p?.Spawned == true))
@@ -285,6 +294,7 @@ namespace SolWorldMod
                 currentRoster.IsLive = true;
                 InitiateAggressiveCombat();
                 Messages.Message("COMBAT STARTED! 90 seconds to fight!", MessageTypeDefOf.PositiveEvent);
+                Log.Message("SolWorld: Combat initiated successfully");
             }
         }
         

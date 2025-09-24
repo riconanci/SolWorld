@@ -3,8 +3,8 @@
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_RedSpawn</defName>
     <label>Red Team Spawner</label>
-    <description>Spawn point for the red team in SolWorld arena battles. Place this to mark where red team fighters will appear during rounds.</description>
-    <thingClass>Building</thingClass>
+    <description>Spawn point for the red team in SolWorld arena battles. Place this to mark where red team fighters will appear during rounds. This building cannot be damaged by any attacks.</description>
+    <thingClass>SolWorldMod.Building_TeamSpawner</thingClass>
     <category>Building</category>
     <graphicData>
       <texPath>Things/Building/Misc/TempControl/Heater</texPath>
@@ -18,9 +18,9 @@
     <fillPercent>0.3</fillPercent>
     <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>150</MaxHitPoints>
+      <MaxHitPoints>999999</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
-      <Flammability>0.5</Flammability>
+      <Flammability>0</Flammability>
       <Beauty>-2</Beauty>
     </statBases>
     <size>(1,1)</size>
@@ -50,8 +50,8 @@
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_BlueSpawn</defName>
     <label>Blue Team Spawner</label>
-    <description>Spawn point for the blue team in SolWorld arena battles. Place this to mark where blue team fighters will appear during rounds.</description>
-    <thingClass>Building</thingClass>
+    <description>Spawn point for the blue team in SolWorld arena battles. Place this to mark where blue team fighters will appear during rounds. This building cannot be damaged by any attacks.</description>
+    <thingClass>SolWorldMod.Building_TeamSpawner</thingClass>
     <category>Building</category>
     <graphicData>
       <texPath>Things/Building/Misc/TempControl/Heater</texPath>
@@ -65,9 +65,9 @@
     <fillPercent>0.3</fillPercent>
     <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>150</MaxHitPoints>
+      <MaxHitPoints>999999</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
-      <Flammability>0.5</Flammability>
+      <Flammability>0</Flammability>
       <Beauty>-2</Beauty>
     </statBases>
     <size>(1,1)</size>

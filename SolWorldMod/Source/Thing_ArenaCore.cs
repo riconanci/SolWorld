@@ -1,6 +1,7 @@
 // solworld/SolWorldMod/Source/Thing_ArenaCore.cs
 using System.Collections.Generic;
 using System.Linq;
+using UnityEngine;
 using Verse;
 using RimWorld;
 
@@ -61,6 +62,35 @@ namespace SolWorldMod
             }
         }
         
+        // INVINCIBILITY IMPLEMENTATION - Using PostApplyDamage to nullify damage after it's applied
+        public override void PostApplyDamage(DamageInfo dinfo, float totalDamageDealt)
+        {
+            // Always show impact effects when hit
+            if (dinfo.Amount > 0)
+            {
+                // Create visual/audio feedback
+                if (Map != null)
+                {
+                    // Create sparks effect
+                    FleckMaker.ThrowMicroSparks(DrawPos, Map);
+                    
+                    // Optional: Show "INVULNERABLE" text
+                    if (Prefs.DevMode)
+                    {
+                        MoteMaker.ThrowText(DrawPos, Map, "INVULNERABLE", Color.yellow, 2f);
+                    }
+                }
+            }
+            
+            // Restore full health after any damage
+            if (HitPoints < MaxHitPoints)
+            {
+                HitPoints = MaxHitPoints;
+            }
+            
+            base.PostApplyDamage(dinfo, 0f); // Pass 0 damage to base
+        }
+        
         public bool IsOperational 
         { 
             get 
@@ -89,14 +119,14 @@ namespace SolWorldMod
                     if (cachedArenaComp.ShouldUITriggerUnpause)
                     {
                         Log.Message("SolWorld: UI flagged for auto-unpause - triggering from Gizmo context!");
-                        cachedArenaComp.ForceUnpause();
+                        cachedArenaComp.OnUITriggeredUnpause();
                     }
                     
                     // AUTO-RESET: Check if UI wants us to automatically trigger the reset
                     if (cachedArenaComp.ShouldUITriggerReset)
                     {
                         Log.Message("SolWorld: UI flagged for auto-reset - triggering from Gizmo context!");
-                        cachedArenaComp.ForceReset();
+                        cachedArenaComp.OnUITriggeredReset();
                     }
                     
                     // MAIN ARENA CONTROLS - ALWAYS visible regardless of state
@@ -109,146 +139,161 @@ namespace SolWorldMod
                             defaultDesc = "Begin automated 10v10 arena rounds with 3-minute cadence\n\n" +
                                          "Requires: Arena Core + Red Spawner + Blue Spawner\n\n" +
                                          "Features:\n• 30s preview (paused)\n• 90s combat\n• Auto-reset between rounds",
-                            icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Attack", false) ?? BaseContent.BadTex,
-                            action = () => {
-                                Log.Message("SolWorld: Start Arena button clicked");
-                                cachedArenaComp.StartArena();
+                            icon = ContentFinder<Texture2D>.Get("UI/Commands/Attack", false) ??
+                                   ContentFinder<Texture2D>.Get("UI/Commands/AttackMelee", true) ??
+                                   BaseContent.BadTex,
+                            action = () =>
+                            {
+                                try
+                                {
+                                    cachedArenaComp.StartArena();
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    Log.Error("SolWorld: Error starting arena: " + ex.Message);
+                                    Messages.Message("Failed to start arena: " + ex.Message, MessageTypeDefOf.RejectInput);
+                                }
                             }
                         };
                         
+                        // Check setup and disable if invalid
                         if (!cachedArenaComp.HasValidSetup)
                         {
                             startButton.Disable(GetSetupErrorMessage());
                         }
                         
                         yield return startButton;
-                        
-                        // Show setup status button
-                        yield return new Command_Action
-                        {
-                            defaultLabel = cachedArenaComp.HasValidSetup ? "✅ Check Setup" : "⚠️ Check Setup",
-                            defaultDesc = GetDetailedSetupStatus(),
-                            icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Info", false) ?? BaseContent.BadTex,
-                            action = () => {
-                                Messages.Message(GetDetailedSetupStatus(), 
-                                    cachedArenaComp.HasValidSetup ? MessageTypeDefOf.PositiveEvent : MessageTypeDefOf.CautionInput);
-                            }
-                        };
                     }
                     else
                     {
-                        // ACTIVE ARENA CONTROLS - Always show these when arena is active
-                        
                         // Stop Arena button
                         yield return new Command_Action
                         {
-                            defaultLabel = "🛑 Stop Arena",
-                            defaultDesc = "Stop automated arena rounds and cleanup all fighters\n\n" +
-                                         "This will:\n• End current round immediately\n• Despawn all fighters\n• Reset arena to inactive state",
-                            icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Halt", false) ?? BaseContent.BadTex,
-                            action = () => {
-                                Log.Message("SolWorld: Stop Arena button clicked");
-                                cachedArenaComp.StopArena();
-                            }
-                        };
-                        
-                        // Force Next Round button
-                        yield return new Command_Action
-                        {
-                            defaultLabel = "⏭️ Force Next Round",
-                            defaultDesc = "Immediately start the next arena round\n\n" +
-                                         "This will:\n• Skip current phase\n• Start new round in 1 second\n• Useful for testing or manual control",
-                            icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Skip", false) ?? BaseContent.BadTex,
-                            action = () => {
-                                Log.Message("SolWorld: Force Next Round button clicked");
-                                cachedArenaComp.ForceNextRound();
-                            }
-                        };
-                        
-                        // PHASE-SPECIFIC EMERGENCY CONTROLS
-                        
-                        // Manual unpause for emergency situations only
-                        if (cachedArenaComp.CurrentState == ArenaState.Preview)
-                        {
-                            yield return new Command_Action
+                            defaultLabel = "⏹️ Stop Arena",
+                            defaultDesc = "Stop the arena and end current round\n\n" +
+                                         "This will:\n• End the current round immediately\n• Despawn all fighters\n• Reset the arena\n• Return to inactive state",
+                            icon = ContentFinder<Texture2D>.Get("UI/Commands/Halt", true) ?? BaseContent.BadTex,
+                            action = () =>
                             {
-                                defaultLabel = "⚡ Manual Unpause",
-                                defaultDesc = "EMERGENCY: Manual unpause if automatic transition fails\n\n" +
-                                             "This should normally happen automatically after 30 seconds.\n" +
-                                             "Only use if the countdown reaches 0 but game stays paused.",
-                                icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Play", false) ?? BaseContent.BadTex,
-                                action = () => {
-                                    Log.Message("SolWorld: Manual Unpause button clicked");
-                                    cachedArenaComp.ForceUnpause();
+                                try
+                                {
+                                    cachedArenaComp.StopArena();
+                                    Messages.Message("Arena stopped", MessageTypeDefOf.NeutralEvent);
                                 }
-                            };
-                        }
-                        
-                        // Manual reset for emergency situations
-                        if (cachedArenaComp.CurrentState == ArenaState.Ended || cachedArenaComp.CurrentState == ArenaState.Resetting)
-                        {
-                            yield return new Command_Action
-                            {
-                                defaultLabel = "⚡ Manual Reset",
-                                defaultDesc = "EMERGENCY: Manual reset if automatic transition fails\n\n" +
-                                             "This should normally happen automatically after 3 seconds.\n" +
-                                             "Only use if arena gets stuck in ended/resetting state.",
-                                icon = ContentFinder<UnityEngine.Texture2D>.Get("UI/Commands/Refresh", false) ?? BaseContent.BadTex,
-                                action = () => {
-                                    Log.Message("SolWorld: Manual Reset button clicked");
-                                    cachedArenaComp.ForceReset();
+                                catch (System.Exception ex)
+                                {
+                                    Log.Error("SolWorld: Error stopping arena: " + ex.Message);
+                                    Messages.Message("Failed to stop arena: " + ex.Message, MessageTypeDefOf.RejectInput);
                                 }
-                            };
-                        }
-                        
-                        // DEVELOPMENT/DEBUG CONTROLS (always available for testing)
-                        
-                        // Debug: Test movement
-                        if (cachedArenaComp.CurrentRoster != null)
-                        {
-                            yield return new Command_Action
-                            {
-                                defaultLabel = "🔧 Test Movement",
-                                defaultDesc = "DEV: Test pawn movement and AI\n\n" +
-                                             "Forces all pawns to move toward enemy spawn points.\n" +
-                                             "Useful for testing combat mechanics.",
-                                icon = BaseContent.BadTex,
-                                action = () => {
-                                    Log.Message("SolWorld: Test Movement button clicked");
-                                    cachedArenaComp.TestCombatMovement();
-                                }
-                            };
-                        }
-                        
-                        // Debug: List pawns
-                        yield return new Command_Action
-                        {
-                            defaultLabel = "📋 List Pawns",
-                            defaultDesc = "DEV: Log all active arena pawns to console\n\n" +
-                                         "Shows current jobs and states of all fighters.\n" +
-                                         "Check the debug log for detailed pawn information.",
-                            icon = BaseContent.BadTex,
-                            action = () => {
-                                Log.Message("SolWorld: List Pawns button clicked");
-                                cachedArenaComp.DebugListActivePawns();
                             }
                         };
                     }
                     
-                    // Test spawn fighters button for development (always available)
-                    yield return new Command_Action
+                    // DEVELOPMENT CONTROLS (only visible in dev mode)
+                    if (Prefs.DevMode)
                     {
-                        defaultLabel = "🧪 Test Spawn",
-                        defaultDesc = "DEV: Test spawn fighters without backend\n\n" +
-                                     "Spawns mock fighters for testing combat mechanics.\n" +
-                                     "Works regardless of setup status.",
-                        icon = BaseContent.BadTex,
-                        action = () => {
-                            Log.Message("SolWorld: Test Spawn button clicked");
-                            var testRoster = CreateTestRoster();
-                            cachedArenaComp.TestSpawnFighters(testRoster);
+                        // Force Next Round (when arena is idle)
+                        if (cachedArenaComp.IsActive && cachedArenaComp.CurrentState == ArenaState.Idle)
+                        {
+                            yield return new Command_Action
+                            {
+                                defaultLabel = "[DEV] Next Round Now",
+                                defaultDesc = "Skip the wait time and start the next round immediately",
+                                icon = ContentFinder<Texture2D>.Get("UI/Commands/AttackMelee", true) ?? BaseContent.BadTex,
+                                action = () =>
+                                {
+                                    try
+                                    {
+                                        cachedArenaComp.ForceNextRound();
+                                        Messages.Message("Next round triggered", MessageTypeDefOf.NeutralEvent);
+                                    }
+                                    catch (System.Exception ex)
+                                    {
+                                        Log.Error("SolWorld: Error triggering next round: " + ex.Message);
+                                    }
+                                }
+                            };
                         }
-                    };
+                        
+                        // Force Unpause (when in preview)
+                        if (cachedArenaComp.IsActive && cachedArenaComp.IsPreviewActive)
+                        {
+                            yield return new Command_Action
+                            {
+                                defaultLabel = "[DEV] Force Unpause",
+                                defaultDesc = "Skip the preview phase and start combat immediately",
+                                icon = ContentFinder<Texture2D>.Get("UI/Commands/AttackMelee", true) ?? BaseContent.BadTex,
+                                action = () =>
+                                {
+                                    try
+                                    {
+                                        cachedArenaComp.ForceUnpause();
+                                        Messages.Message("Combat started", MessageTypeDefOf.NeutralEvent);
+                                    }
+                                    catch (System.Exception ex)
+                                    {
+                                        Log.Error("SolWorld: Error force unpausing: " + ex.Message);
+                                    }
+                                }
+                            };
+                        }
+                        
+                        // Force Reset (when in combat)
+                        if (cachedArenaComp.IsActive && cachedArenaComp.CurrentState == ArenaState.Combat)
+                        {
+                            yield return new Command_Action
+                            {
+                                defaultLabel = "[DEV] Force Reset",
+                                defaultDesc = "End combat immediately and reset the arena",
+                                icon = ContentFinder<Texture2D>.Get("UI/Commands/Halt", true) ?? BaseContent.BadTex,
+                                action = () =>
+                                {
+                                    try
+                                    {
+                                        cachedArenaComp.ForceReset();
+                                        Messages.Message("Arena reset", MessageTypeDefOf.NeutralEvent);
+                                    }
+                                    catch (System.Exception ex)
+                                    {
+                                        Log.Error("SolWorld: Error force resetting: " + ex.Message);
+                                    }
+                                }
+                            };
+                        }
+                        
+                        // Force Refresh Setup
+                        yield return new Command_Action
+                        {
+                            defaultLabel = "[DEV] Refresh Setup",
+                            defaultDesc = "Force refresh the arena setup and spawner detection",
+                            icon = BaseContent.BadTex,
+                            action = () =>
+                            {
+                                try
+                                {
+                                    cachedArenaComp.ForceRefreshSpawners();
+                                    Messages.Message("Setup refreshed - check inspect text", MessageTypeDefOf.NeutralEvent);
+                                }
+                                catch (System.Exception ex)
+                                {
+                                    Log.Error("SolWorld: Error refreshing setup: " + ex.Message);
+                                }
+                            }
+                        };
+                        
+                        // Test Spawn Fighters
+                        yield return new Command_Action
+                        {
+                            defaultLabel = "[DEV] Test Spawn",
+                            defaultDesc = "Spawn test fighters for debugging arena layout",
+                            icon = BaseContent.BadTex,
+                            action = () => {
+                                Log.Message("SolWorld: Test Spawn button clicked");
+                                var testRoster = CreateTestRoster();
+                                cachedArenaComp.TestSpawnFighters(testRoster);
+                            }
+                        };
+                    }
                 }
                 else
                 {
@@ -296,45 +341,33 @@ namespace SolWorldMod
                 
             var status = "Arena Setup Status:\n\n";
             
-            // Arena Core status
-            status += "✓ Arena Core: Operational\n";
+            // Check arena core
+            status += "✓ Arena Core: Present\n";
             
-            // Check for spawners - FIXED: Force refresh before checking
+            // Check for spawners
             if (Map != null)
             {
-                cachedArenaComp.ForceRefreshSpawners(); // This will update spawner references
-                
                 var redSpawner = Map.listerBuildings.allBuildingsColonist
                     .FirstOrDefault(b => b.def?.defName == "SolWorld_RedSpawn");
                 var blueSpawner = Map.listerBuildings.allBuildingsColonist
                     .FirstOrDefault(b => b.def?.defName == "SolWorld_BlueSpawn");
-                
+                    
                 if (redSpawner != null)
-                    status += "✓ Red Team Spawner: Found\n";
-                else
-                    status += "✗ Red Team Spawner: MISSING\n";
-                    
-                if (blueSpawner != null)
-                    status += "✓ Blue Team Spawner: Found\n";
-                else
-                    status += "✗ Blue Team Spawner: MISSING\n";
-                    
-                if (redSpawner != null && blueSpawner != null)
                 {
-                    var bounds = cachedArenaComp.GetArenaBounds();
-                    if (bounds.HasValue)
-                    {
-                        status += $"\n✓ Arena Bounds: {bounds.Value.Width}x{bounds.Value.Height} cells";
-                        status += $"\n✓ Arena Area: {bounds.Value.Width * bounds.Value.Height} cells";
-                    }
-                    else
-                    {
-                        status += "\n✗ Arena Bounds: Could not calculate";
-                    }
+                    status += "✓ Red Team Spawner: Present\n";
                 }
                 else
                 {
-                    status += "\nPlace both team spawners to calculate arena bounds.";
+                    status += "✗ Red Team Spawner: MISSING\n";
+                }
+                
+                if (blueSpawner != null)
+                {
+                    status += "✓ Blue Team Spawner: Present\n";
+                }
+                else
+                {
+                    status += "✗ Blue Team Spawner: MISSING\n";
                 }
             }
             
@@ -452,7 +485,8 @@ namespace SolWorldMod
                 var settings = SolWorldMod.Settings;
                 if (settings != null)
                 {
-                    text += "\nBackend: " + (string.IsNullOrEmpty(settings.apiBaseUrl) ? "Not configured" : 
+                    text += "\nBackend: " + (string.IsNullOrEmpty(settings.apiBaseUrl) ? 
+                        "Not configured" : 
                         settings.IsDevMode ? "Dev mode" : "Production");
                     
                     if (!string.IsNullOrEmpty(settings.tokenMint))
@@ -482,6 +516,9 @@ namespace SolWorldMod
             {
                 text += "\nArena: ERROR - Component not found";
             }
+            
+            // Add invincibility status
+            text += "\nStatus: INVULNERABLE";
             
             return text;
         }

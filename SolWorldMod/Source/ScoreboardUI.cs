@@ -290,8 +290,8 @@ namespace SolWorldMod
             }
             
             // Calculate total dimensions
-            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 40f);
-            var totalHeight = roster != null ? 210f : 180f; // REDUCED: From 280f to 240f
+            var totalWidth = Mathf.Max(700f, pawnAreaWidth + 20f);
+            var totalHeight = roster != null ? 230f : 180f; // REDUCED: From 280f to 240f
             
             var centerX = UI.screenWidth / 2f;
             var topY = 15f;
@@ -703,7 +703,7 @@ namespace SolWorldMod
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
                     var nameRect = new Rect(rect.x, rect.yMax - 16f, rect.width, 14f); // Larger name area
-                    var shortName = fighter.WalletShort.Length > 10 ? fighter.WalletShort.Substring(0, 10) : fighter.WalletShort;
+                    var shortName = "..." + GetLast6Characters(fighter.WalletShort);
                     
                     // Background for name
                     GUI.color = new Color(0f, 0f, 0f, 0.7f);

@@ -3,13 +3,13 @@
   <ThingDef ParentName="BuildingBase">
     <defName>SolWorld_ArenaCore</defName>
     <label>SolWorld Arena Core</label>
-    <description>The central control system for automated SolWorld arena battles. Manages 10v10 rounds with 5-minute cadence. Requires two team spawners to function. No power required - operates independently.</description>
+    <description>The central control system for automated SolWorld arena battles. Manages 10v10 rounds with 5-minute cadence. Requires two team spawners to function. No power required - operates independently. This building cannot be damaged by any attacks.</description>
     <thingClass>SolWorldMod.Thing_ArenaCore</thingClass>
     <category>Building</category>
     <graphicData>
       <texPath>Things/Building/Misc/MultiAnalyzer</texPath>
       <graphicClass>Graphic_Multi</graphicClass>
-      <drawSize>(2,2)</drawSize>
+      <drawSize>(1,1)</drawSize>
       <damageData>
         <cornerTL>Damage/Corner</cornerTL>
         <cornerTR>Damage/Corner</cornerTR>
@@ -24,12 +24,12 @@
     <fillPercent>0.5</fillPercent>
     <canOverlapZones>false</canOverlapZones>
     <statBases>
-      <MaxHitPoints>400</MaxHitPoints>
+      <MaxHitPoints>999999</MaxHitPoints>
       <WorkToBuild>1</WorkToBuild>
-      <Flammability>0.5</Flammability>
+      <Flammability>0</Flammability>
       <Beauty>-5</Beauty>
     </statBases>
-    <size>(2,2)</size>
+    <size>(1,1)</size>
     <designationCategory>SolWorld_Arena</designationCategory>
     <constructEffect>ConstructMetal</constructEffect>
     <costList>
