@@ -664,6 +664,10 @@ namespace SolWorldMod
                 Log.Message("SolWorld: ===== SPAWNING TEAMS =====");
                 SpawnBothTeams();
                 
+                // ADD THIS LINE HERE - Step 5.5: Make arena lamps invincible
+                Log.Message("SolWorld: Making arena lamps invincible...");
+                MakeArenaLampsInvincible();
+
                 // Step 5: PAUSE the game
                 Log.Message("SolWorld: ===== PAUSING GAME =====");
                 Find.TickManager.CurTimeSpeed = TimeSpeed.Paused;
@@ -2045,6 +2049,87 @@ namespace SolWorldMod
             }
         }
         
+        // Add this method to your MapComponent_SolWorldArena.cs class:
+        public void MakeArenaLampsInvincible()
+        {
+            if (map == null) return;
+            
+            Log.Message("SolWorld: Making arena lamps invincible and power-free...");
+            
+            // Find all wall lamps in the arena bounds
+            var bounds = GetArenaBounds();
+            if (!bounds.HasValue) return;
+            
+            var arenaLamps = new List<Building>();
+            
+            // Get all buildings in arena bounds
+            foreach (var cell in bounds.Value)
+            {
+                var buildings = cell.GetThingList(map).OfType<Building>().ToList();
+                foreach (var building in buildings)
+                {
+                    // Check if it's a lamp (wall lamp, standing lamp, etc.)
+                    if (building.def.defName.Contains("Lamp") || 
+                        building.def.defName.Contains("TorchLamp") ||
+                        building.def.comps?.Any(c => c is CompProperties_Glower) == true)
+                    {
+                        arenaLamps.Add(building);
+                    }
+                }
+            }
+            
+            Log.Message($"SolWorld: Found {arenaLamps.Count} lamps in arena bounds");
+            
+            // Make each lamp invincible and power-free
+            foreach (var lamp in arenaLamps)
+            {
+                try
+                {
+                    // FIXED: Only set HitPoints, MaxHitPoints is read-only
+                    lamp.HitPoints = 999999;
+                    
+                    // FIXED: Correct way to handle power component
+                    var powerComp = lamp.GetComp<CompPowerTrader>();
+                    if (powerComp != null)
+                    {
+                        // Force power on by manipulating the power grid connection
+                        powerComp.PowerOn = true;
+                        
+                        // Try to set power output to 0 (remove power consumption)
+                        try
+                        {
+                            // Use reflection to set private fields if needed
+                            var powerOutputField = typeof(CompPowerTrader).GetField("powerOutputInt", 
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            if (powerOutputField != null)
+                            {
+                                powerOutputField.SetValue(powerComp, 0f);
+                            }
+                        }
+                        catch
+                        {
+                            // If reflection fails, just leave power as-is
+                            Log.Message("SolWorld: Could not modify power consumption via reflection");
+                        }
+                    }
+                    
+                    // Ensure glower works
+                    var glowerComp = lamp.GetComp<CompGlower>();
+                    if (glowerComp != null)
+                    {
+                        // Force light on
+                        glowerComp.UpdateLit(map);
+                    }
+                    
+                    Log.Message($"SolWorld: Modified lamp: {lamp.def.defName} at {lamp.Position}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to modify lamp {lamp.def.defName}: {ex.Message}");
+                }
+            }
+        }
+
         // FIXED: Handle pawn death properly to prevent errors
         public void HandlePawnDeath(Pawn deadPawn)
         {

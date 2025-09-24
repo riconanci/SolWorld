@@ -49,7 +49,7 @@ namespace SolWorldMod
 
                 // Draw semi-transparent overlay over entire screen to dim default UI
                 var fullScreenRect = new Rect(0, 0, UI.screenWidth, UI.screenHeight);
-                GUI.color = new Color(0, 0, 0, 0.3f); // 30% black overlay
+                GUI.color = new Color(0, 0, 0, 0.0f); // 30% black overlay
                 GUI.DrawTexture(fullScreenRect, BaseContent.WhiteTex);
                 GUI.color = Color.white;
 
