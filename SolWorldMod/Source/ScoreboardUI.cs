@@ -228,11 +228,11 @@ namespace SolWorldMod
                 
                 // Wallet address (last 6 characters)
                 var walletText = "..." + GetLast6Characters(fighter.WalletShort);
-                var walletRect = new Rect(rect.x + 30f, rect.y + 5f, rect.width - 35f, rect.height - 10f);
-                
+                var walletRect = new Rect(rect.x + 30f, rect.y + 6f, rect.width - 35f, rect.height - 12f); // Better vertical centering
+
                 GUI.color = Color.white;
-                Text.Font = GameFont.Small;
-                Text.Anchor = TextAnchor.MiddleLeft;
+                Text.Font = GameFont.Tiny; // Change from GameFont.Small to GameFont.Tiny
+                Text.Anchor = TextAnchor.MiddleCenter; // Change from MiddleLeft to MiddleCenter
                 Widgets.Label(walletRect, walletText);
                 
                 // Enhanced tooltip for winners
@@ -291,7 +291,7 @@ namespace SolWorldMod
             
             // Calculate total dimensions
             var totalWidth = Mathf.Max(700f, pawnAreaWidth + 20f);
-            var totalHeight = roster != null ? 230f : 180f; // REDUCED: From 280f to 240f
+            var totalHeight = roster != null ? 220f : 180f; // REDUCED: From 280f to 240f
             
             var centerX = UI.screenWidth / 2f;
             var topY = 15f;
@@ -615,8 +615,7 @@ namespace SolWorldMod
             
             var headerRect = new Rect(startX, y, width, 22f);
             var aliveCount = fighters.Count(f => f.Alive);
-            var killCount = fighters.Sum(f => f.Kills);
-            var teamHeader = $"{team.ToString().ToUpper()} TEAM ({aliveCount}/10) - {killCount} KILLS";
+            var teamHeader = $"{team.ToString().ToUpper()} TEAM ({aliveCount}/10)";
             Widgets.Label(headerRect, teamHeader);
             
             Text.Anchor = TextAnchor.UpperLeft;
@@ -702,11 +701,11 @@ namespace SolWorldMod
                     GUI.color = Color.white;
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
-                    var nameRect = new Rect(rect.x, rect.yMax - 16f, rect.width, 14f); // Larger name area
+                    var nameRect = new Rect(rect.x, rect.yMax - 18f, rect.width, 16f); // Larger name area
                     var shortName = "..." + GetLast6Characters(fighter.WalletShort);
                     
                     // Background for name
-                    GUI.color = new Color(0f, 0f, 0f, 0.7f);
+                    GUI.color = new Color(0f, 0f, 0f, 0.8f);
                     GUI.DrawTexture(nameRect, BaseContent.WhiteTex);
                     GUI.color = Color.white;
                     

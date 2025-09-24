@@ -1,4 +1,5 @@
 // solworld/SolWorldMod/Source/MapComponent_SolWorldArena.cs
+// UPDATED WITH BALANCED
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -34,6 +35,9 @@ namespace SolWorldMod
         private LoadoutPreset currentRoundLoadoutPreset;
         private string[] currentRoundRedWeapons;
         private string[] currentRoundBlueWeapons;
+
+        // ⭐ ADD THIS LINE RIGHT HERE: ⭐
+        //private static bool lastRoundFavoredRed = false; // Track spawn order
 
         // WINNER STORAGE - Persistent winner data for UI celebration
         private TeamColor? lastRoundWinner = null;
@@ -787,24 +791,26 @@ namespace SolWorldMod
         
         private void SetupArenaFactions()
         {
-            Log.Message("SolWorld: Setting up arena factions using existing hostile/friendly factions");
+            Log.Message("SolWorld: Setting up arena factions for proper name colors");
             
-            // Find an existing hostile faction for red team
+            // SIMPLE APPROACH: Use existing factions WITHOUT modifying relationships
+            
+            // Red team = hostile faction (red names)
             redTeamFaction = Find.FactionManager.AllFactions
                 .Where(f => f != null && !f.IsPlayer && f.HostileTo(Faction.OfPlayer) && f.def.humanlikeFaction)
                 .FirstOrDefault();
             
             if (redTeamFaction == null)
             {
-                Log.Warning("SolWorld: No hostile faction found, red team will use player faction");
+                Log.Warning("SolWorld: No hostile faction found, using player faction for red team");
                 redTeamFaction = Faction.OfPlayer;
             }
             else
             {
-                Log.Message($"SolWorld: Using hostile faction '{redTeamFaction.Name}' for red team");
+                Log.Message($"SolWorld: Red team using hostile faction '{redTeamFaction.Name}' (red names)");
             }
             
-            // Find an existing friendly faction for blue team
+            // Blue team = friendly faction (blue names) 
             blueTeamFaction = Find.FactionManager.AllFactions
                 .Where(f => f != null && !f.IsPlayer && !f.HostileTo(Faction.OfPlayer) && f.def.humanlikeFaction)
                 .FirstOrDefault();
@@ -816,41 +822,296 @@ namespace SolWorldMod
             }
             else
             {
-                Log.Message($"SolWorld: Using friendly faction '{blueTeamFaction.Name}' for blue team");
-                
-                // Make blue team hostile to red team so they fight each other
-                if (redTeamFaction != blueTeamFaction && redTeamFaction != Faction.OfPlayer)
+                Log.Message($"SolWorld: Blue team using friendly faction '{blueTeamFaction.Name}' (blue names)");
+            }
+            
+            // CRITICAL: Do NOT modify faction relationships here!
+            // Let the combat system handle targeting through ForceAttackTarget() instead
+            
+            Log.Message("SolWorld: Faction setup complete - name colors preserved");
+        }
+
+        private void MakeHostileFactionsHostileToEachOther()
+        {
+            if (redTeamFaction != null && blueTeamFaction != null && redTeamFaction != blueTeamFaction)
+            {
+                try
                 {
-                    try
+                    Log.Message("SolWorld: Making hostile factions hostile to each other");
+                    
+                    var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, true);
+                    if (redToBlue != null)
                     {
-                        // Set mutual hostility between the teams
-                        var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, true);
-                        if (blueToRed != null)
-                        {
-                            blueToRed.baseGoodwill = -100;
-                            blueToRed.kind = FactionRelationKind.Hostile;
-                        }
-                        
-                        var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, true);
-                        if (redToBlue != null)
-                        {
-                            redToBlue.baseGoodwill = -100;
-                            redToBlue.kind = FactionRelationKind.Hostile;
-                        }
-                        
-                        Log.Message($"SolWorld: Set {redTeamFaction.Name} and {blueTeamFaction.Name} as hostile to each other");
+                        redToBlue.baseGoodwill = -100;
+                        redToBlue.kind = FactionRelationKind.Hostile;
                     }
-                    catch (Exception ex)
+                    
+                    var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, true);
+                    if (blueToRed != null)
                     {
-                        Log.Warning($"SolWorld: Failed to set faction hostility: {ex.Message}");
+                        blueToRed.baseGoodwill = -100;
+                        blueToRed.kind = FactionRelationKind.Hostile;
                     }
+                    
+                    Log.Message("SolWorld: Hostile faction mutual hostility established");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to set hostile faction hostility: {ex.Message}");
                 }
             }
         }
-        
+
+        // NEW: Simpler hostility setup that doesn't mess with player relationships
+        private void MakeTeamsHostileToEachOther()
+        {
+            if (redTeamFaction != null && blueTeamFaction != null && redTeamFaction != blueTeamFaction)
+            {
+                try
+                {
+                    Log.Message("SolWorld: Making red faction hostile to blue faction (player relationship unchanged)");
+                    
+                    // Only set hostility from red faction to blue faction
+                    // Since blue = player faction, this won't affect name colors
+                    var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, true);
+                    if (redToBlue != null)
+                    {
+                        redToBlue.baseGoodwill = -100;
+                        redToBlue.kind = FactionRelationKind.Hostile;
+                    }
+                    
+                    // The blue team (player faction) will automatically defend itself
+                    // This creates mutual hostility without changing player relationships
+                    
+                    Log.Message($"SolWorld: Combat hostility set up - red will attack blue, blue will defend");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to set team hostility: {ex.Message}");
+                }
+            }
+        }
+
+        private void MakeTeamsFightEachOther()
+        {
+            if (redTeamFaction != null && blueTeamFaction != null && redTeamFaction != blueTeamFaction)
+            {
+                try
+                {
+                    Log.Message("SolWorld: Making teams hostile to each other (PRESERVING player relationships for name colors)");
+                    
+                    // CRITICAL: Store original player relationships BEFORE making changes
+                    var originalRedToPlayer = redTeamFaction.RelationWith(Faction.OfPlayer);
+                    var originalBlueToPlayer = blueTeamFaction.RelationWith(Faction.OfPlayer);
+                    
+                    Log.Message($"SolWorld: Original relationships - Red: {originalRedToPlayer.kind}, Blue: {originalBlueToPlayer.kind}");
+                    
+                    // Force mutual hostility between the teams so they fight
+                    var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, true);
+                    if (blueToRed != null)
+                    {
+                        blueToRed.baseGoodwill = -100;
+                        blueToRed.kind = FactionRelationKind.Hostile;
+                    }
+                    
+                    var redToBlue = redTeamFaction.RelationWith(blueTeamFaction, true);
+                    if (redToBlue != null)
+                    {
+                        redToBlue.baseGoodwill = -100;
+                        redToBlue.kind = FactionRelationKind.Hostile;
+                    }
+                    
+                    // CRITICAL: RESTORE original player relationships to preserve name colors
+                    if (originalRedToPlayer != null)
+                    {
+                        var redToPlayer = redTeamFaction.RelationWith(Faction.OfPlayer, true);
+                        if (redToPlayer != null)
+                        {
+                            redToPlayer.baseGoodwill = originalRedToPlayer.baseGoodwill;
+                            redToPlayer.kind = originalRedToPlayer.kind;
+                        }
+                    }
+                    
+                    if (originalBlueToPlayer != null)
+                    {
+                        var blueToPlayer = blueTeamFaction.RelationWith(Faction.OfPlayer, true);
+                        if (blueToPlayer != null)
+                        {
+                            blueToPlayer.baseGoodwill = originalBlueToPlayer.baseGoodwill;
+                            blueToPlayer.kind = originalBlueToPlayer.kind;
+                        }
+                    }
+                    
+                    Log.Message($"SolWorld: ✅ Teams will fight each other BUT keep original name colors");
+                    
+                    // Verify final relationships
+                    var finalRedToPlayer = redTeamFaction.RelationWith(Faction.OfPlayer);
+                    var finalBlueToPlayer = blueTeamFaction.RelationWith(Faction.OfPlayer);
+                    Log.Message($"SolWorld: Final name colors - Red: {finalRedToPlayer.kind}, Blue: {finalBlueToPlayer.kind}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to set team hostility: {ex.Message}");
+                }
+            }
+        }
+
+        private void MakeBlueFriendlyToPlayer()
+        {
+            try
+            {
+                Log.Message("SolWorld: Making blue team friendly to player for blue name colors");
+                
+                var blueToPlayer = blueTeamFaction.RelationWith(Faction.OfPlayer, true);
+                if (blueToPlayer != null)
+                {
+                    blueToPlayer.baseGoodwill = 50; // Friendly
+                    blueToPlayer.kind = FactionRelationKind.Neutral; // Neutral/friendly gives blue names
+                    Log.Message($"SolWorld: ✅ Blue team is now {blueToPlayer.kind} to player (blue names)");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to make blue team friendly: {ex.Message}");
+            }
+        }
+
+        // STEP 2: Add this NEW method anywhere in your MapComponent_SolWorldArena.cs class:
+
+        private void NormalizePawnCombatStats(Pawn pawn)
+        {
+            if (pawn?.skills == null) return;
+            
+            Log.Message($"SolWorld: COMPREHENSIVE BALANCE - Normalizing {pawn.Name}");
+            
+            // STEP 1: Identical combat skills (you already have this)
+            const int STANDARD_SKILL_LEVEL = 15;
+            
+            var shooting = pawn.skills.GetSkill(SkillDefOf.Shooting);
+            var melee = pawn.skills.GetSkill(SkillDefOf.Melee);
+            
+            if (shooting != null)
+            {
+                shooting.Level = STANDARD_SKILL_LEVEL;
+                shooting.passion = Passion.Major;
+                shooting.xpSinceLastLevel = 0;
+            }
+            
+            if (melee != null)
+            {
+                melee.Level = STANDARD_SKILL_LEVEL;
+                melee.passion = Passion.Major;
+                melee.xpSinceLastLevel = 0;
+            }
+            
+            // STEP 2: Remove ALL combat-affecting traits
+            if (pawn.story?.traits != null)
+            {
+                try
+                {
+                    var combatTraits = new string[] { 
+                        "Pacifist", "Wimp", "SlowLearner", "Bloodlust", "Psychopath", 
+                        "Brawler", "Tough", "Fast Learner", "Quick", "Nimble",
+                        "Trigger-happy", "Careful Shooter", "ShootingAccuracy",
+                        "Nervous", "Volatile", "Masochist", "Cannibal"
+                    };
+                    
+                    foreach (var traitName in combatTraits)
+                    {
+                        var traitDef = DefDatabase<TraitDef>.GetNamedSilentFail(traitName);
+                        if (traitDef != null && pawn.story.traits.HasTrait(traitDef))
+                        {
+                            pawn.story.traits.allTraits.RemoveAll(t => t.def == traitDef);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to normalize traits: {ex.Message}");
+                }
+            }
+            
+            // STEP 3: NEW - Normalize health and body parts
+            if (pawn.health?.hediffSet != null)
+            {
+                try
+                {
+                    // Remove all negative health effects
+                    var badHediffs = pawn.health.hediffSet.hediffs
+                        .Where(h => h.def.makesSickThought || h.def.tendable || h.def.chronic || 
+                                (h.CurStage?.capMods != null && h.CurStage.capMods.Any()))
+                        .ToList();
+                    
+                    foreach (var hediff in badHediffs)
+                    {
+                        pawn.health.RemoveHediff(hediff);
+                    }
+                    
+                    // Add identical combat bonuses to everyone
+                    var combatBoostDef = DefDatabase<HediffDef>.GetNamedSilentFail("Adrenaline");
+                    if (combatBoostDef != null)
+                    {
+                        pawn.health.AddHediff(combatBoostDef);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to normalize health: {ex.Message}");
+                }
+            }
+            
+            // STEP 4: NEW - Normalize age for identical base stats
+            if (pawn.ageTracker != null)
+            {
+                try
+                {
+                    const long STANDARD_AGE = 25L * 3600000L; // 25 years old
+                    pawn.ageTracker.AgeBiologicalTicks = STANDARD_AGE;
+                    pawn.ageTracker.AgeChronologicalTicks = STANDARD_AGE;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to normalize age: {ex.Message}");
+                }
+            }
+            
+            // STEP 5: NEW - Force identical needs levels
+            if (pawn.needs != null)
+            {
+                try
+                {
+                    if (pawn.needs.mood != null) pawn.needs.mood.CurLevel = 1.0f;
+                    if (pawn.needs.rest != null) pawn.needs.rest.CurLevel = 1.0f;
+                    if (pawn.needs.food != null) pawn.needs.food.CurLevel = 1.0f;
+                    if (pawn.needs.joy != null) pawn.needs.joy.CurLevel = 1.0f;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to normalize needs: {ex.Message}");
+                }
+            }
+            
+            // STEP 6: NEW - Set identical combat confidence
+            if (pawn.mindState != null)
+            {
+                try
+                {
+                    pawn.mindState.canFleeIndividual = false;
+                    pawn.mindState.breachingTarget = null;
+                    pawn.mindState.lastEngageTargetTick = Find.TickManager.TicksGame;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to normalize mind state: {ex.Message}");
+                }
+            }
+            
+            Log.Message($"SolWorld: ✅ FULLY NORMALIZED {pawn.Name} for perfect balance");
+        }
+
         private void SpawnBothTeams()
         {
-            Log.Message("SolWorld: ===== SPAWNING BOTH TEAMS =====");
+            Log.Message("SolWorld: ===== SPAWNING BOTH TEAMS WITH IDENTICAL LOADOUTS =====");
             
             // Clear previous pawn lists and mappings
             redTeamPawns.Clear();
@@ -858,15 +1119,30 @@ namespace SolWorldMod
             pawnTeamMap.Clear();
             pawnLastActionTick.Clear();
             
-            // Spawn red team (hostile)
-            Log.Message("SolWorld: Spawning red team (HOSTILE)...");
+            // CRITICAL: Always spawn RED team first to generate loadout, then BLUE team uses same loadout
+            // This ensures identical weapons regardless of alternating spawn order
+            
+            Log.Message("SolWorld: Spawning RED team first (generates loadout)...");
             SpawnTeam(currentRoster.Red, redSpawner.Position, TeamColor.Red, redTeamFaction);
             
-            // Spawn blue team (friendly)
-            Log.Message("SolWorld: Spawning blue team (FRIENDLY)...");
+            Log.Message("SolWorld: Spawning BLUE team second (uses identical loadout)...");
             SpawnTeam(currentRoster.Blue, blueSpawner.Position, TeamColor.Blue, blueTeamFaction);
             
-            Log.Message("SolWorld: ===== BOTH TEAMS SPAWNED SUCCESSFULLY =====");
+            // VERIFICATION: Final check that loadouts are identical
+            if (currentRoundRedWeapons != null && currentRoundBlueWeapons != null)
+            {
+                var identical = currentRoundRedWeapons.SequenceEqual(currentRoundBlueWeapons);
+                if (identical)
+                {
+                    Log.Message("✅ SolWorld: VERIFIED - Both teams have identical weapon loadouts");
+                }
+                else
+                {
+                    Log.Error("❌ SolWorld: CRITICAL BUG - Teams have different weapon loadouts!");
+                }
+            }
+            
+            Log.Message("SolWorld: ===== BOTH TEAMS SPAWNED WITH LOADOUT VERIFICATION =====");
             
             // Count spawned pawns for verification
             var redSpawned = currentRoster.Red.Count(f => f.PawnRef?.Spawned == true);
@@ -880,35 +1156,39 @@ namespace SolWorldMod
         {
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
             
-            // Get balanced loadouts - use random if enabled, otherwise use selected preset
+            // FIXED: Generate loadout ONCE for both teams at the start
             string[] teamWeapons;
             LoadoutPreset usedPreset;
             
+            // Only generate loadout on RED team spawn, then use same for BLUE
             if (teamColor == TeamColor.Red)
             {
-                // Red team determines the loadout for the round
+                Log.Message("SolWorld: RED team spawning - generating loadout for BOTH teams");
+                
                 if (SolWorldMod.Settings.UseRandomLoadouts)
                 {
                     var (redWeapons, blueWeapons, preset) = LoadoutManager.GenerateBalancedLoadouts(useRandomPreset: true);
-                    teamWeapons = redWeapons;
                     usedPreset = preset;
                     
-                    // Store for blue team to use the same loadout
+                    // CRITICAL: Store the EXACT same weapon array for both teams
                     currentRoundLoadoutPreset = preset;
                     currentRoundRedWeapons = redWeapons;
                     currentRoundBlueWeapons = blueWeapons;
+                    
+                    teamWeapons = redWeapons;
                 }
                 else
                 {
                     var specificPreset = LoadoutManager.GetPreset(SolWorldMod.Settings.selectedLoadoutPreset);
                     var (redWeapons, blueWeapons, preset) = LoadoutManager.GenerateBalancedLoadouts(useRandomPreset: false, specificPreset: specificPreset);
-                    teamWeapons = redWeapons;
                     usedPreset = preset;
                     
-                    // Store for blue team
+                    // CRITICAL: Store the EXACT same weapon array for both teams
                     currentRoundLoadoutPreset = preset;
                     currentRoundRedWeapons = redWeapons;
                     currentRoundBlueWeapons = blueWeapons;
+                    
+                    teamWeapons = redWeapons;
                 }
                 
                 // Update roster with loadout info for UI display
@@ -917,14 +1197,45 @@ namespace SolWorldMod
                     currentRoster.LoadoutPresetName = usedPreset.Name;
                     currentRoster.LoadoutDescription = usedPreset.Description;
                 }
+                
+                Log.Message($"SolWorld: Generated loadout '{usedPreset.Name}' for both teams");
+                LogTeamWeapons(teamWeapons, "Red");
             }
-            else
+            else // Blue team
             {
-                // Blue team uses the same loadout as red team
-                teamWeapons = currentRoundBlueWeapons;
+                Log.Message("SolWorld: BLUE team spawning - using identical loadout from red team");
+                
+                // CRITICAL: Use the EXACT same weapons as red team
+                teamWeapons = currentRoundBlueWeapons ?? currentRoundRedWeapons;
                 usedPreset = currentRoundLoadoutPreset;
+                
+                if (teamWeapons == null)
+                {
+                    Log.Error("SolWorld: No weapons stored from red team! Generating emergency loadout");
+                    var (redWeapons, blueWeapons, preset) = LoadoutManager.GenerateBalancedLoadouts(useRandomPreset: true);
+                    teamWeapons = blueWeapons;
+                    usedPreset = preset;
+                }
+                
+                Log.Message($"SolWorld: Blue team using loadout '{usedPreset?.Name}'");
+                LogTeamWeapons(teamWeapons, "Blue");
             }
             
+            // VERIFICATION: Log that both teams will get identical weapons
+            if (teamColor == TeamColor.Blue && currentRoundRedWeapons != null)
+            {
+                var identical = currentRoundRedWeapons.SequenceEqual(teamWeapons);
+                Log.Message($"SolWorld: LOADOUT VERIFICATION - Teams have identical weapons: {identical}");
+                
+                if (!identical)
+                {
+                    Log.Error("SolWorld: CRITICAL ERROR - Teams have different loadouts!");
+                    Log.Error($"Red weapons: [{string.Join(", ", currentRoundRedWeapons)}]");
+                    Log.Error($"Blue weapons: [{string.Join(", ", teamWeapons)}]");
+                }
+            }
+            
+            // Spawn the fighters with their weapons
             for (int i = 0; i < fighters.Count; i++)
             {
                 var fighter = fighters[i];
@@ -942,14 +1253,25 @@ namespace SolWorldMod
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
                         
-                        // UPDATED: Give specific weapon from balanced loadout
+                        // CRITICAL: Give specific weapon from identical loadout
                         if (i < teamWeapons.Length)
                         {
-                            LoadoutManager.GiveWeaponToPawn(pawn, teamWeapons[i]);
+                            var weaponDefName = teamWeapons[i];
+                            var success = LoadoutManager.GiveWeaponToPawn(pawn, weaponDefName);
+                            
+                            if (success)
+                            {
+                                Log.Message($"SolWorld: {teamColor} fighter {i} ({fighter.WalletShort}) equipped with {weaponDefName}");
+                            }
+                            else
+                            {
+                                Log.Warning($"SolWorld: Failed to equip {teamColor} fighter {i} with {weaponDefName}, using fallback");
+                                GiveWeapon(pawn); // Fallback
+                            }
                         }
                         else
                         {
-                            // Fallback to old method if index out of range
+                            Log.Warning($"SolWorld: Fighter index {i} exceeds weapon array length {teamWeapons.Length}, using fallback");
                             GiveWeapon(pawn);
                         }
                         
@@ -965,13 +1287,30 @@ namespace SolWorldMod
                         // Apply team visual styling
                         ApplyTeamStyling(pawn, teamColor);
                         
-                        Log.Message($"SolWorld: Spawned {fighter.WalletShort} ({teamColor})");
+                        Log.Message($"SolWorld: Spawned {fighter.WalletShort} ({teamColor}) with weapon {i}");
                     }
                     catch (Exception ex)
                     {
                         Log.Error($"SolWorld: Failed to spawn {fighter.WalletShort}: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        private void LogTeamWeapons(string[] weapons, string teamName)
+        {
+            if (weapons == null || weapons.Length == 0)
+            {
+                Log.Warning($"SolWorld: {teamName} team has no weapons!");
+                return;
+            }
+            
+            Log.Message($"SolWorld: {teamName} team weapon distribution:");
+            for (int i = 0; i < weapons.Length; i++)
+            {
+                var weaponDef = DefDatabase<ThingDef>.GetNamedSilentFail(weapons[i]);
+                var displayName = weaponDef?.label ?? weapons[i];
+                Log.Message($"  Fighter {i}: {displayName} ({weapons[i]})");
             }
         }
      
@@ -1019,6 +1358,9 @@ namespace SolWorldMod
                 EnsurePawnMindStateSetup(pawn);
                 GiveWeapon(pawn);
                 MakeWarrior(pawn);
+                
+                // ADD: Normalize combat stats for balance
+                NormalizePawnCombatStats(pawn);
                 
                 return pawn;
             }
@@ -1169,6 +1511,7 @@ namespace SolWorldMod
             }
         }
         
+        // ENHANCED: Combat initiation that works with player faction blue team
         private void InitiateAggressiveCombat()
         {
             Log.Message("SolWorld: ===== INITIATING AGGRESSIVE COMBAT =====");
@@ -1177,10 +1520,10 @@ namespace SolWorldMod
             lastCombatEnforcementTick = Find.TickManager.TicksGame;
             lastAggressiveEnforcementTick = Find.TickManager.TicksGame;
             
-            // Make teams TRULY hostile to each other
-            SetupProperFactionHostility();
+            // REMOVED: SetupProperFactionHostility() - this was breaking name colors
+            // Combat will work through direct pawn targeting instead
             
-            // Force immediate combat engagement
+            // Force immediate combat engagement through ForceAttackTarget
             foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true && !p.Dead))
             {
                 SetupAggressiveCombatant(redPawn, TeamColor.Red);
@@ -1191,17 +1534,84 @@ namespace SolWorldMod
                 SetupAggressiveCombatant(bluePawn, TeamColor.Blue);
             }
             
-            // Force initial attack orders
+            // This will force combat through direct targeting, not faction hostility
             ForceInitialCombatEngagement();
         }
         
+        // NEW: Special setup for player faction combatants (blue team)
+        private void SetupPlayerFactionCombatant(Pawn pawn, TeamColor team)
+        {
+            // Make them aggressive fighters even though they're player faction
+            if (pawn.mindState != null)
+            {
+                pawn.mindState.canFleeIndividual = false;
+                // Use different duty that works with player faction
+                pawn.mindState.duty = new PawnDuty(DutyDefOf.Defend);
+            }
+            
+            // Max out their combat readiness
+            if (pawn.needs != null)
+            {
+                if (pawn.needs.mood != null) pawn.needs.mood.CurLevel = 1.0f;
+                if (pawn.needs.rest != null) pawn.needs.rest.CurLevel = 1.0f;
+                if (pawn.needs.food != null) pawn.needs.food.CurLevel = 1.0f;
+            }
+            
+            // Force combat skills to max (same as red team)
+            if (pawn.skills != null)
+            {
+                var shooting = pawn.skills.GetSkill(SkillDefOf.Shooting);
+                var melee = pawn.skills.GetSkill(SkillDefOf.Melee);
+                
+                if (shooting != null)
+                {
+                    shooting.Level = 20;
+                    shooting.passion = Passion.Major;
+                }
+                
+                if (melee != null)
+                {
+                    melee.Level = 20;
+                    melee.passion = Passion.Major;
+                }
+            }
+        }
+
+        // NEW: Special combat setup for mixed faction combat
+        private void SetupPlayerFactionCombat()
+        {
+            try
+            {
+                Log.Message("SolWorld: Setting up player faction vs hostile faction combat");
+                
+                // Make sure red faction is hostile to player faction (for combat)
+                if (redTeamFaction != Faction.OfPlayer)
+                {
+                    var redToPlayer = redTeamFaction.RelationWith(Faction.OfPlayer, true);
+                    if (redToPlayer != null)
+                    {
+                        redToPlayer.baseGoodwill = -100;
+                        redToPlayer.kind = FactionRelationKind.Hostile;
+                    }
+                }
+                
+                Log.Message("SolWorld: Player faction combat setup complete");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to setup player faction combat: {ex.Message}");
+            }
+        }
+
         private void SetupProperFactionHostility()
         {
             if (redTeamFaction != null && blueTeamFaction != null && redTeamFaction != blueTeamFaction)
             {
                 try
                 {
-                    // Force mutual hostility
+                    Log.Message("SolWorld: Setting up proper faction hostility (preserving name colors)");
+                    
+                    // ONLY set team-to-team hostility, NOT player relationships
                     var blueToRed = blueTeamFaction.RelationWith(redTeamFaction, true);
                     if (blueToRed != null)
                     {
@@ -1216,7 +1626,8 @@ namespace SolWorldMod
                         redToBlue.kind = FactionRelationKind.Hostile;
                     }
                     
-                    Log.Message($"SolWorld: Forced hostility between {redTeamFaction.Name} and {blueTeamFaction.Name}");
+                    // CRITICAL: Do NOT change player relationships here!
+                    Log.Message($"SolWorld: Team hostility set, player relationships preserved");
                 }
                 catch (Exception ex)
                 {
@@ -1224,18 +1635,25 @@ namespace SolWorldMod
                 }
             }
             
-            // Manually set pawn hostilities if faction hostility fails
+            // Use direct pawn targeting instead of faction changes
             foreach (var redPawn in redTeamPawns.Where(p => p?.Spawned == true))
             {
                 foreach (var bluePawn in blueTeamPawns.Where(p => p?.Spawned == true))
                 {
                     try
                     {
-                        // Force them to see each other as enemies
+                        // Force them to see each other as enemies WITHOUT changing faction relationships
                         if (redPawn.mindState != null)
                         {
+                            // Set enemy target but don't change faction relationship
                             redPawn.mindState.enemyTarget = bluePawn;
                             redPawn.mindState.lastEngageTargetTick = Find.TickManager.TicksGame;
+                        }
+                        if (bluePawn.mindState != null)
+                        {
+                            // Set enemy target but don't change faction relationship  
+                            bluePawn.mindState.enemyTarget = redPawn;
+                            bluePawn.mindState.lastEngageTargetTick = Find.TickManager.TicksGame;
                         }
                     }
                     catch { }
