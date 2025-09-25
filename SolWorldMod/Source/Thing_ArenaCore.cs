@@ -397,6 +397,7 @@ namespace SolWorldMod
         
         public override string GetInspectString()
         {
+            Messages.Message("TEST: Arena Core inspect called!", MessageTypeDefOf.PositiveEvent);
             var text = base.GetInspectString();
             if (!string.IsNullOrEmpty(text))
                 text += "\n";

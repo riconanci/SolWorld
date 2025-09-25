@@ -1,4 +1,4 @@
-// backend/src/routes/arena.ts
+// backend/src/routes/arena.ts - COMPLETE HYBRID VERSION (Original + Tiers)
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import HoldersService from '../services/holders';
@@ -38,6 +38,7 @@ const ReportSchema = z.object({
 /**
  * GET /api/arena/holders
  * Returns 20 random token holders for the next round
+ * NOW WITH TIER SUPPORT + BACKWARD COMPATIBILITY
  */
 router.get('/holders', async (req: Request, res: Response) => {
   try {
@@ -45,20 +46,37 @@ router.get('/holders', async (req: Request, res: Response) => {
     
     const result = await holdersService.getRandomHolders();
     
-    // Log for monitoring
-    console.log(`✅ Returning ${result.wallets.length} holders (${result.source})`);
+    // Enhanced logging with tier information
+    console.log(`✅ Returning ${result.wallets.length} tiered fighters (${result.source})`);
+    if (result.stats.tierDistribution && Object.keys(result.stats.tierDistribution).length > 0) {
+      console.log('🏆 Tier breakdown:');
+      Object.entries(result.stats.tierDistribution).forEach(([tierName, count]) => {
+        console.log(`   ${count}x ${tierName}`);
+      });
+    }
     
     res.json({
       success: true,
       data: {
+        // BACKWARD COMPATIBILITY: Original format
         wallets: result.wallets,
         roundRewardTotalSol: result.roundRewardTotalSol,
-        payoutPercent: result.payoutPercent
+        payoutPercent: result.payoutPercent,
+        
+        // NEW: Tiered fighter data (optional for enhanced RimWorld mod)
+        fighters: result.fighters || [],
+        tierStats: result.fighters ? {
+          distribution: result.stats.tierDistribution || {},
+          totalSelected: result.stats.selected,
+          averageTier: result.fighters.length > 0 ? 
+            result.fighters.reduce((sum, f) => sum + f.tier.tier, 0) / result.fighters.length : 0
+        } : undefined
       },
       meta: {
         source: result.source,
         stats: result.stats,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        version: 'tiered-v1.0'
       }
     });
 
@@ -75,7 +93,7 @@ router.get('/holders', async (req: Request, res: Response) => {
 
 /**
  * POST /api/arena/report
- * Process arena results and execute payouts
+ * Process arena results and execute payouts (ORIGINAL ADVANCED LOGIC PRESERVED)
  */
 router.post('/report', async (req: Request, res: Response) => {
   try {
@@ -95,7 +113,7 @@ router.post('/report', async (req: Request, res: Response) => {
 
     const report = validation.data as ArenaReportPayload;
     
-    // HMAC validation
+    // HMAC validation (ORIGINAL LOGIC)
     const hmacValidation = hmacService.validateRequest(report);
     if (!hmacValidation.valid) {
       console.warn('❌ HMAC validation failed:', hmacValidation.error);
@@ -118,7 +136,7 @@ router.post('/report', async (req: Request, res: Response) => {
       });
     }
 
-    // Process the arena result
+    // Process the arena result (ORIGINAL ADVANCED PROCESSING)
     const result = await payoutService.processArenaResult(report);
     
     if (result.success) {
@@ -187,7 +205,7 @@ router.post('/report', async (req: Request, res: Response) => {
 
 /**
  * GET /api/arena/status
- * Get current arena system status
+ * Get current arena system status (ENHANCED WITH TIER INFO)
  */
 router.get('/status', async (req: Request, res: Response) => {
   try {
@@ -198,6 +216,10 @@ router.get('/status', async (req: Request, res: Response) => {
       Promise.resolve(hmacService.getStatus())
     ]);
 
+    // Enhanced with tier information
+    const refreshStatus = holdersService.getRefreshStatus();
+    const tierStats = holderStats?.tiers || {};
+
     res.json({
       success: true,
       status: 'operational',
@@ -205,20 +227,25 @@ router.get('/status', async (req: Request, res: Response) => {
         holders: holderStats ? 'healthy' : 'degraded',
         payouts: 'healthy',
         treasury: treasuryStatus.error ? 'error' : 'healthy',
-        hmac: 'healthy'
+        hmac: 'healthy',
+        tiers: tierStats.totalHolders > 0 ? 'healthy' : 'degraded'
       },
       data: {
         holders: holderStats,
         payouts: payoutStats,
         treasury: treasuryStatus,
-        security: hmacStatus
+        security: hmacStatus,
+        tiers: tierStats,
+        backgroundRefresh: refreshStatus
       },
       config: {
         isDev: config.IS_DEV,
         tokenMint: config.TEST_TOKEN_MINT,
         payoutSplit: `${config.PAYOUT_SPLIT_PERCENT * 100}%`,
         roundPool: `${config.roundPoolSol} SOL`,
-        gasReserve: `${config.GAS_RESERVE_SOL} SOL`
+        gasReserve: `${config.GAS_RESERVE_SOL} SOL`,
+        minHolderBalance: config.MIN_HOLDER_BALANCE.toLocaleString(),
+        tierSystem: 'enabled'
       },
       timestamp: new Date().toISOString()
     });
@@ -235,8 +262,55 @@ router.get('/status', async (req: Request, res: Response) => {
 });
 
 /**
+ * GET /api/arena/tiers
+ * Get detailed tier information and statistics
+ */
+router.get('/tiers', async (req: Request, res: Response) => {
+  try {
+    console.log('🏆 Tier information requested');
+    
+    const holderStats = await holdersService.getHolderStats();
+    const refreshStatus = holdersService.getRefreshStatus();
+    
+    if (!holderStats || !holderStats.tiers) {
+      return res.status(503).json({
+        success: false,
+        error: 'Tier data unavailable',
+        message: 'Holder service not ready'
+      });
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        tierSystem: holderStats.tiers,
+        refreshStatus: refreshStatus,
+        summary: {
+          totalHolders: holderStats.tiers.totalHolders,
+          eligibleForArena: holderStats.blockchain.eligibleHolders,
+          whales: Object.values(holderStats.tiers.tierBreakdown)
+            .filter((tier: any) => tier.holders > 0 && (tier.name.includes('Warlord') || tier.name.includes('Destroyer')))
+            .reduce((sum: number, tier: any) => sum + tier.holders, 0),
+          lastUpdate: holderStats.lastUpdate
+        }
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Failed to get tier info:', error);
+    
+    res.status(500).json({
+      success: false,
+      error: 'Failed to get tier information', 
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+/**
  * POST /api/arena/test
- * Test endpoints for development
+ * Test endpoints for development (ENHANCED WITH TIER TESTING)
  */
 router.post('/test', async (req: Request, res: Response) => {
   if (!config.IS_DEV) {
@@ -254,8 +328,23 @@ router.post('/test', async (req: Request, res: Response) => {
         const testResults = await holdersService.testSelection(3);
         res.json({
           success: true,
-          action: 'holders_test',
+          action: 'tiered_holders_test',
           results: testResults
+        });
+        break;
+      }
+      
+      case 'tiers': {
+        // Test tier distribution
+        const holderStats = await holdersService.getHolderStats();
+        res.json({
+          success: true,
+          action: 'tier_distribution_test',
+          results: {
+            tierBreakdown: holderStats?.tiers?.tierBreakdown || {},
+            totalHolders: holderStats?.tiers?.totalHolders || 0,
+            refreshStatus: holdersService.getRefreshStatus()
+          }
         });
         break;
       }
@@ -304,7 +393,7 @@ router.post('/test', async (req: Request, res: Response) => {
         res.status(400).json({
           success: false,
           error: 'Unknown test action',
-          availableActions: ['holders', 'payout', 'hmac', 'refresh', 'clear']
+          availableActions: ['holders', 'tiers', 'payout', 'hmac', 'refresh', 'clear']
         });
     }
 
@@ -321,7 +410,7 @@ router.post('/test', async (req: Request, res: Response) => {
 
 /**
  * GET /api/arena/config
- * Get current configuration for the mod
+ * Get current configuration for the mod (PRESERVED FROM ORIGINAL)
  */
 router.get('/config', (req: Request, res: Response) => {
   res.json({
@@ -334,10 +423,13 @@ router.get('/config', (req: Request, res: Response) => {
       gasReserveSol: config.GAS_RESERVE_SOL,
       isDev: config.IS_DEV,
       hmacRequired: !config.IS_DEV,
+      tierSystem: true,
       endpoints: {
         holders: '/api/arena/holders',
         report: '/api/arena/report',
-        status: '/api/arena/status'
+        status: '/api/arena/status',
+        tiers: '/api/arena/tiers',
+        config: '/api/arena/config'
       }
     },
     timestamp: new Date().toISOString()

@@ -39,6 +39,21 @@ namespace SolWorldMod
         // ⭐ ADD THIS LINE RIGHT HERE: ⭐
         //private static bool lastRoundFavoredRed = false; // Track spawn order
 
+        // Tier system data structures
+        private Dictionary<string, TieredFighter> currentRoundTierData = new Dictionary<string, TieredFighter>();
+
+        public class TieredFighter
+        {
+            public string Wallet { get; set; }
+            public float Balance { get; set; }
+            public int Tier { get; set; }
+            public string TierName { get; set; }
+            public string WeaponQuality { get; set; }
+            public bool HasArmor { get; set; }
+            public bool HasHelmet { get; set; }
+            public bool HasAura { get; set; }
+        }
+
         // WINNER STORAGE - Persistent winner data for UI celebration
         private TeamColor? lastRoundWinner = null;
         private string lastMatchId = "";
@@ -209,6 +224,7 @@ namespace SolWorldMod
                 if (currentState == ArenaState.Idle && nextRoundTick > 0 && currentTick >= nextRoundTick)
                 {
                     Log.Message("SolWorld: TIME TO START NEW ROUND! Current: " + currentTick + ", Next: " + nextRoundTick);
+                    Messages.Message("DEBUG: About to call StartNewRound()!", MessageTypeDefOf.PositiveEvent);
                     StartNewRound();
                     return;
                 }
@@ -641,6 +657,7 @@ namespace SolWorldMod
         
         public void StartArena()
         {
+            Messages.Message("DEBUG: StartArena() called!", MessageTypeDefOf.PositiveEvent);
             RefreshSpawners();
             
             if (!HasValidSetup)
@@ -663,6 +680,7 @@ namespace SolWorldMod
             // Start first round immediately
             Log.Message("SolWorld: Arena activated - STARTING FIRST ROUND IMMEDIATELY!");
             nextRoundTick = Find.TickManager.TicksGame + 60; // Start in 1 second
+            Messages.Message($"DEBUG: Scheduled first round for tick {nextRoundTick}, current tick is {Find.TickManager.TicksGame}", MessageTypeDefOf.PositiveEvent);
             
             Messages.Message("Arena activated! First round starting immediately...", MessageTypeDefOf.PositiveEvent);
             Log.Message("SolWorld: Arena successfully started, first round scheduled for tick " + nextRoundTick);
@@ -804,7 +822,7 @@ namespace SolWorldMod
         private void CreateRoster()
         {
             Log.Message("SolWorld: Creating roster...");
-            
+            Messages.Message("DEBUG: CreateRoster() called!", MessageTypeDefOf.CautionInput);
             // Try to get real holders from backend
             string[] realHolders = null;
             try
@@ -822,11 +840,33 @@ namespace SolWorldMod
                     var jsonResponse = reader.ReadToEnd();
                     Log.Message("SolWorld: Backend response received: " + jsonResponse.Substring(0, Math.Min(100, jsonResponse.Length)) + "...");
                     
-                    // Simple JSON parsing to extract wallets array
-                    if (jsonResponse.Contains("\"wallets\":[") && jsonResponse.Contains("\"success\":true"))
+                    // Enhanced JSON parsing to extract both wallets and fighters arrays
+                    if (jsonResponse.Contains("\"success\":true"))
                     {
                         realHolders = ExtractWalletsFromJson(jsonResponse);
-                        Log.Message("SolWorld: Extracted " + (realHolders?.Length ?? 0) + " wallet addresses");
+                        var realFighters = ExtractFightersFromJson(jsonResponse);
+                        
+                        if (realFighters != null && realFighters.Length >= 20)
+                        {
+                            Log.Message("SolWorld: Extracted " + realFighters.Length + " tiered fighters from backend!");
+                            // Store tier data for use during spawning
+                            StoreTierDataForRound(realFighters);
+                            // Test code to verify tier system is working
+                            if (currentRoundTierData.Count > 0)
+                            {
+                                var firstFighter = currentRoundTierData.Values.First();
+                                Messages.Message($"TIER SYSTEM ACTIVE: {currentRoundTierData.Count} fighters loaded. First fighter is Tier {firstFighter.Tier} ({firstFighter.TierName})", MessageTypeDefOf.PositiveEvent);
+                                Log.Message($"SolWorld: First fighter details - Tier {firstFighter.Tier}, Armor: {firstFighter.HasArmor}, Helmet: {firstFighter.HasHelmet}");
+                            }
+                            else
+                            {
+                                Messages.Message("TIER SYSTEM: No tier data found - using fallback", MessageTypeDefOf.CautionInput);
+                            }
+                        }
+                        else if (realHolders != null)
+                        {
+                            Log.Message("SolWorld: Using wallet-only data (no tier information)");
+                        }
                     }
                     else
                     {
@@ -845,8 +885,19 @@ namespace SolWorldMod
                 RoundRewardTotalSol = SolWorldMod.Settings.roundPoolSol,
                 PayoutPercent = SolWorldMod.Settings.payoutPercent
             };
-            
-            if (realHolders != null && realHolders.Length >= 20)
+
+            // PRIORITIZE tier data if available
+            if (currentRoundTierData.Count >= 20)
+            {
+                Log.Message("SolWorld: Using TIERED fighters from backend!");
+                var tieredFighters = currentRoundTierData.Values.Take(20).ToList();
+                for (int i = 0; i < 10; i++)
+                {
+                    currentRoster.Red.Add(new Fighter(tieredFighters[i].Wallet, TeamColor.Red));
+                    currentRoster.Blue.Add(new Fighter(tieredFighters[i + 10].Wallet, TeamColor.Blue));
+                }
+            }
+            else if (realHolders != null && realHolders.Length >= 20)
             {
                 Log.Message("SolWorld: Using REAL wallet addresses from backend!");
                 for (int i = 0; i < 10; i++)
@@ -865,7 +916,7 @@ namespace SolWorldMod
                     currentRoster.Blue.Add(new Fighter(mockHolders[i + 10], TeamColor.Blue));
                 }
             }
-            
+
             Log.Message("SolWorld: Created roster with 20 fighters (10 red, 10 blue)");
             Log.Message("SolWorld: Sample fighter names - Red[0]: " + currentRoster.Red[0].WalletShort + ", Blue[0]: " + currentRoster.Blue[0].WalletShort);
         }
@@ -899,6 +950,129 @@ namespace SolWorldMod
                 return null;
             }
         }        
+
+        private TieredFighter[] ExtractFightersFromJson(string json)
+        {
+            try
+            {
+                // Look for fighters array in the JSON
+                var fightersStart = json.IndexOf("\"fighters\":[");
+                if (fightersStart == -1) return null;
+                
+                fightersStart += 12; // Skip past "fighters":[
+                var bracket_count = 1;
+                var fightersEnd = fightersStart;
+                
+                // Find matching closing bracket
+                for (int i = fightersStart; i < json.Length && bracket_count > 0; i++)
+                {
+                    if (json[i] == '[') bracket_count++;
+                    else if (json[i] == ']') bracket_count--;
+                    fightersEnd = i;
+                }
+                
+                var fightersSection = json.Substring(fightersStart, fightersEnd - fightersStart);
+                
+                // Simple parsing - split by fighter objects
+                var fighters = new List<TieredFighter>();
+                var parts = fightersSection.Split(new string[] { "},{" }, StringSplitOptions.RemoveEmptyEntries);
+                
+                foreach (var part in parts)
+                {
+                    var cleanPart = part.Replace("{", "").Replace("}", "");
+                    var fighter = ParseSingleFighter(cleanPart);
+                    if (fighter != null)
+                    {
+                        fighters.Add(fighter);
+                    }
+                }
+                
+                return fighters.ToArray();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning("SolWorld: Failed to extract fighters: " + ex.Message);
+                return null;
+            }
+        }
+
+        private TieredFighter ParseSingleFighter(string fighterJson)
+        {
+            try
+            {
+                // Extract wallet, balance, and tier info
+                var wallet = ExtractJsonValue(fighterJson, "wallet");
+                var balanceStr = ExtractJsonValue(fighterJson, "balance");
+                var tierStr = ExtractJsonValue(fighterJson, "tier");
+                
+                if (string.IsNullOrEmpty(wallet)) return null;
+                
+                var balance = float.TryParse(balanceStr, out var b) ? b : 50000f;
+                var tierNum = int.TryParse(ExtractJsonValue(tierStr, "tier"), out var t) ? t : 1;
+                var tierName = ExtractJsonValue(tierStr, "name") ?? "Basic Fighter";
+                var weaponQuality = ExtractJsonValue(tierStr, "weaponQuality") ?? "Normal";
+                
+                return new TieredFighter
+                {
+                    Wallet = wallet,
+                    Balance = balance,
+                    Tier = tierNum,
+                    TierName = tierName,
+                    WeaponQuality = weaponQuality,
+                    HasArmor = tierStr.Contains("\"hasArmor\":true"),
+                    HasHelmet = tierStr.Contains("\"hasHelmet\":true"),
+                    HasAura = tierStr.Contains("\"hasAura\":true")
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string ExtractJsonValue(string json, string key)
+        {
+            try
+            {
+                var searchKey = "\"" + key + "\":";
+                var start = json.IndexOf(searchKey);
+                if (start == -1) return null;
+                
+                start += searchKey.Length;
+                
+                // Handle string values (in quotes)
+                if (json[start] == '"')
+                {
+                    start++; // Skip opening quote
+                    var end = json.IndexOf('"', start);
+                    return end > start ? json.Substring(start, end - start) : null;
+                }
+                
+                // Handle numeric values
+                var end2 = start;
+                while (end2 < json.Length && (char.IsDigit(json[end2]) || json[end2] == '.' || json[end2] == '-'))
+                {
+                    end2++;
+                }
+                
+                return end2 > start ? json.Substring(start, end2 - start) : null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void StoreTierDataForRound(TieredFighter[] fighters)
+        {
+            currentRoundTierData.Clear();
+            foreach (var fighter in fighters)
+            {
+                currentRoundTierData[fighter.Wallet] = fighter;
+            }
+            Log.Message($"SolWorld: Stored tier data for {currentRoundTierData.Count} fighters");
+        }
+
         private string[] GenerateMockHolders()
         {
             var holders = new string[20];
@@ -1261,6 +1435,7 @@ namespace SolWorldMod
 
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, TeamColor teamColor, Faction teamFaction)
         {
+            Messages.Message($"DEBUG: SpawnTeam called for {teamColor} team with {fighters.Count} fighters", MessageTypeDefOf.PositiveEvent);
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
             
             // FIXED: Generate loadout ONCE for both teams at the start
@@ -1463,6 +1638,12 @@ namespace SolWorldMod
         // FIXED: Pawn generation to avoid cast errors
         private Pawn GenerateWarrior(Fighter fighter, TeamColor teamColor, Faction teamFaction)
         {
+            // Spam messages every frame to force visibility
+            for (int i = 0; i < 5; i++)
+            {
+                Messages.Message($"WARRIOR SPAWN #{i}: {fighter.WalletShort}", MessageTypeDefOf.RejectInput);
+            }
+            
             try
             {
                 // Use appropriate pawn kind based on faction

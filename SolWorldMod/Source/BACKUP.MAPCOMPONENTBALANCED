@@ -166,6 +166,28 @@ namespace SolWorldMod
             blueTeamPawns.RemoveAll(p => p == null);
         }
         
+        // Custom name rendering - add this override to MapComponent_SolWorldArena
+        public override void MapComponentOnGUI()
+        {
+            base.MapComponentOnGUI();
+            
+            // Draw custom names during active arena rounds
+            if (!isActive || currentRoster == null || currentState == ArenaState.Idle)
+                return;
+            
+            // Draw EVERY frame during Repaint for smooth movement tracking
+            if (Event.current.type == EventType.Repaint)
+            {
+                DrawCustomArenaNames();
+            }
+            
+            // ALSO draw during Layout for even more frequent updates
+            if (Event.current.type == EventType.Layout)
+            {
+                DrawCustomArenaNames();
+            }
+        }
+
         public override void MapComponentTick()
         {
             base.MapComponentTick();
@@ -417,6 +439,100 @@ namespace SolWorldMod
             }
         }
         
+        private void DrawCustomArenaNames()
+        {
+            var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).Where(p => p?.Spawned == true).ToList();
+            
+            foreach (var pawn in allArenaPawns)
+            {
+                if (pawn?.Spawned == true && pawn.Position.InBounds(map))
+                {
+                    var teamColor = pawnTeamMap.TryGetValue(pawn, out var team) ? team : TeamColor.Red;
+                    var nameColor = teamColor == TeamColor.Red ? Color.red : Color.blue;
+                    
+                    DrawColoredPawnName(pawn, nameColor);
+                }
+            }
+        }
+
+        private void DrawColoredPawnName(Pawn pawn, Color nameColor)
+        {
+            // Use the pawn's exact world position for smoother tracking
+            var worldPos = pawn.DrawPos; // DrawPos is more accurate for moving pawns than Position
+            var screenPos = Find.Camera.WorldToScreenPoint(worldPos);
+            
+            // Check if pawn is visible on screen
+            if (screenPos.z <= 0 || screenPos.x < 0 || screenPos.x > Screen.width || screenPos.y < 0 || screenPos.y > Screen.height)
+                return;
+            
+            // Convert to GUI coordinates (Y is flipped)
+            screenPos.y = Screen.height - screenPos.y;
+            
+            // Get the fighter data to show the real wallet name with team prefix
+            var fighter = currentRoster?.Red.Concat(currentRoster.Blue).FirstOrDefault(f => f.PawnRef == pawn);
+            var nameText = fighter != null ? fighter.WalletShort : pawn.Name.ToStringShort;
+            
+            // Set up text styling
+            var oldFont = Text.Font;
+            var oldAnchor = Text.Anchor;
+            var oldColor = GUI.color;
+            
+            Text.Font = GameFont.Tiny;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            
+            // Calculate text size and position
+            var textSize = Text.CalcSize(nameText);
+            var nameRect = new Rect(
+                screenPos.x - textSize.x / 2f, //8 to 2
+                screenPos.y + 12f, // Covering original name position 5 to 12
+                textSize.x,
+                textSize.y
+            );
+            
+            // Solid black background to completely hide the "." character
+            var bgRect = new Rect(nameRect.x - 2f, nameRect.y, nameRect.width + 4f, nameRect.height);
+            GUI.color = Color.black; // Full opacity black
+            GUI.DrawTexture(bgRect, BaseContent.WhiteTex);
+            
+            // Draw your colored name
+            GUI.color = nameColor;
+            Widgets.Label(nameRect, nameText);
+            
+            // Restore original styling
+            GUI.color = oldColor;
+            Text.Font = oldFont;
+            Text.Anchor = oldAnchor;
+        }
+
+        // Restore default names after arena (add to cleanup methods)
+        private void RestoreDefaultPawnLabel(Pawn pawn)
+        {
+            try
+            {
+                var overlayField = typeof(Pawn).GetField("pawnUIOverlay", 
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                
+                if (overlayField != null)
+                {
+                    var overlay = overlayField.GetValue(pawn);
+                    if (overlay != null)
+                    {
+                        var labelVisibleField = overlay.GetType().GetField("labelVisible", 
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        
+                        if (labelVisibleField != null && labelVisibleField.FieldType == typeof(bool))
+                        {
+                            labelVisibleField.SetValue(overlay, true);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // Silent fail
+            }
+        }
+
         public void RegisterArenaCore(Thing_ArenaCore core)
         {
             arenaCore = core;
@@ -1243,6 +1359,9 @@ namespace SolWorldMod
                     {
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
+
+                        // NEW: Strip all food items from inventory
+                        StripFoodFromPawn(pawn);
                         
                         // CRITICAL: Give specific weapon from identical loadout
                         if (i < teamWeapons.Length)
@@ -1285,6 +1404,42 @@ namespace SolWorldMod
                         Log.Error($"SolWorld: Failed to spawn {fighter.WalletShort}: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        private void StripFoodFromPawn(Pawn pawn)
+        {
+            if (pawn?.inventory?.innerContainer == null)
+                return;
+
+            try
+            {
+                // Find all food/meal items in inventory
+                var foodItems = pawn.inventory.innerContainer
+                    .Where(thing => thing.def.IsIngestible || 
+                                thing.def.ingestible != null ||
+                                thing.def.defName.Contains("Meal") ||
+                                thing.def.defName.Contains("Pemmican") ||
+                                thing.def.defName.Contains("Chocolate") ||
+                                thing.def.category == ThingCategory.Item && 
+                                thing.def.IsNutritionGivingIngestible)
+                    .ToList();
+
+                // Remove each food item
+                foreach (var foodItem in foodItems)
+                {
+                    pawn.inventory.innerContainer.Remove(foodItem);
+                    Log.Message($"SolWorld: Stripped {foodItem.def.defName} from {pawn.Name}");
+                }
+
+                if (foodItems.Count > 0)
+                {
+                    Log.Message($"SolWorld: Removed {foodItems.Count} food items from {pawn.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to strip food from {pawn.Name}: {ex.Message}");
             }
         }
 
@@ -1361,7 +1516,7 @@ namespace SolWorldMod
                 return null;
             }
         }
-        
+
         private void EnsurePawnMindStateSetup(Pawn pawn)
         {
             try
@@ -1382,12 +1537,24 @@ namespace SolWorldMod
         {
             try
             {
+                // Hair coloring
                 if (pawn.story != null)
                 {
                     if (teamColor == TeamColor.Red)
                         pawn.story.HairColor = Color.red;
                     else
                         pawn.story.HairColor = Color.blue;
+                }
+                
+                // Make the pawn's actual name nearly invisible
+                var originalName = pawn.Name.ToStringShort;
+                var teamPrefix = teamColor == TeamColor.Red ? "[R]" : "[B]";
+                
+                if (!originalName.StartsWith("[R]") && !originalName.StartsWith("[B]"))
+                {
+                    // Use a single dot or space - minimal but won't cause UI errors
+                    pawn.Name = new NameSingle("."); 
+                    Log.Message($"SolWorld: Made {originalName} name minimal for overlay system");
                 }
                 
                 if (pawn.Drawer?.renderer != null)
@@ -1397,7 +1564,43 @@ namespace SolWorldMod
             }
             catch (Exception ex)
             {
-                Log.Warning($"SolWorld: Failed to apply team styling: {ex.Message}");
+                Log.Error($"SolWorld: Failed to apply team styling: {ex.Message}");
+            }
+        }
+        private void HideDefaultPawnLabel(Pawn pawn)
+        {
+            try
+            {
+                var pawnUIOverlay = pawn.Drawer?.ui;
+                if (pawnUIOverlay != null)
+                {
+                    // Try to access the label visibility field
+                    var labelVisibleField = pawnUIOverlay.GetType().GetField("labelVisible", 
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    
+                    if (labelVisibleField != null && labelVisibleField.FieldType == typeof(bool))
+                    {
+                        labelVisibleField.SetValue(pawnUIOverlay, false);
+                        Log.Message($"SolWorld: Hid default label for {pawn.Name}");
+                    }
+                    else
+                    {
+                        // Alternative approach - try different field names
+                        var drawPawnLabelField = pawnUIOverlay.GetType().GetField("drawPawnLabel", 
+                            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                        
+                        if (drawPawnLabelField != null && drawPawnLabelField.FieldType == typeof(bool))
+                        {
+                            drawPawnLabelField.SetValue(pawnUIOverlay, false);
+                            Log.Message($"SolWorld: Hid default label for {pawn.Name} (method 2)");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Message($"SolWorld: Could not hide default label for {pawn.Name}: {ex.Message}");
+                // Not critical - custom overlay will still work
             }
         }
         
