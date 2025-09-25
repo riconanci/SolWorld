@@ -340,6 +340,35 @@ namespace SolWorldMod
             }
         }
         
+        private void StripAllHeadwear(Pawn pawn)
+        {
+            if (pawn?.apparel?.WornApparel == null) return;
+            
+            try
+            {
+                // Find all headwear (hats, helmets, etc.)
+                var headwear = pawn.apparel.WornApparel
+                    .Where(apparel => apparel.def.apparel.bodyPartGroups.Any(bp => 
+                        bp.defName == "FullHead" || bp.defName == "UpperHead"))
+                    .ToList();
+                
+                // Remove each piece of headwear
+                foreach (var item in headwear)
+                {
+                    pawn.apparel.Remove(item);
+                }
+                
+                if (headwear.Count > 0)
+                {
+                    Log.Message($"SolWorld: Stripped {headwear.Count} headwear items from {pawn.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to strip headwear from {pawn.Name}: {ex.Message}");
+            }
+        }
+
         // FIXED: Execute arena reset from UI context with complete reset system
         private void ExecuteArenaReset()
         {
@@ -1643,7 +1672,7 @@ namespace SolWorldMod
             {
                 Messages.Message($"WARRIOR SPAWN #{i}: {fighter.WalletShort}", MessageTypeDefOf.RejectInput);
             }
-            
+
             try
             {
                 // Use appropriate pawn kind based on faction
@@ -1682,6 +1711,8 @@ namespace SolWorldMod
                 var pawn = PawnGenerator.GeneratePawn(request);
                 pawn.Name = new NameSingle(fighter.WalletShort);
                 
+                // Strip all existing headwear to show hair and prepare for tier-based helmets
+                StripAllHeadwear(pawn);
                 EnsurePawnMindStateSetup(pawn);
                 GiveWeapon(pawn);
                 MakeWarrior(pawn);
