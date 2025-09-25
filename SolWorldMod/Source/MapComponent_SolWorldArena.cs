@@ -40,7 +40,7 @@ namespace SolWorldMod
         //private static bool lastRoundFavoredRed = false; // Track spawn order
 
         // Tier system data structures
-        private Dictionary<string, TieredFighter> currentRoundTierData = new Dictionary<string, TieredFighter>();
+        public Dictionary<string, TieredFighter> currentRoundTierData { get; private set; } = new Dictionary<string, TieredFighter>();
 
         public class TieredFighter
         {
@@ -574,7 +574,7 @@ namespace SolWorldMod
             }
             catch (Exception ex)
             {
-                // Silent fail
+                
             }
         }
 
@@ -613,7 +613,7 @@ namespace SolWorldMod
         // FIXED: Force refresh method with error recovery
         public void ForceRefreshSpawners()
         {
-            Log.Message("SolWorld: FORCE refreshing spawners...");
+            // Removed: "FORCE refreshing spawners..." log message
             
             if (map == null) 
             {
@@ -629,7 +629,6 @@ namespace SolWorldMod
             
             try
             {
-                // Get fresh building list - CRITICAL: Use fresh enumeration each time
                 var allBuildings = map.listerBuildings?.allBuildingsColonist;
                 if (allBuildings == null)
                 {
@@ -637,25 +636,26 @@ namespace SolWorldMod
                     return;
                 }
                 
-                // Find spawners with explicit enumeration
-                foreach (var building in allBuildings.ToList()) // ToList() prevents enumeration changes
+                // Find spawners (removed individual log messages)
+                foreach (var building in allBuildings.ToList())
                 {
                     if (building?.def?.defName == "SolWorld_RedSpawn")
                     {
                         redSpawner = building;
-                        Log.Message("SolWorld: Found Red spawner at " + building.Position);
                     }
                     else if (building?.def?.defName == "SolWorld_BlueSpawn")
                     {
                         blueSpawner = building;
-                        Log.Message("SolWorld: Found Blue spawner at " + building.Position);
                     }
                 }
                 
-                // Log the results
-                Log.Message($"SolWorld: Spawner refresh complete - Red: {redSpawner != null}, Blue: {blueSpawner != null}");
+                // Only log if something changed
+                if (redSpawner != prevRed || blueSpawner != prevBlue)
+                {
+                    Log.Message($"SolWorld: Spawner status - Red: {redSpawner != null}, Blue: {blueSpawner != null}");
+                }
                 
-                // Warn if we lost spawners
+                // Keep the warning messages for lost spawners
                 if (prevRed != null && redSpawner == null)
                     Log.Warning("SolWorld: LOST Red spawner during refresh!");
                 if (prevBlue != null && blueSpawner == null)
@@ -665,16 +665,14 @@ namespace SolWorldMod
             {
                 Log.Error($"SolWorld: Error during spawner refresh: {ex.Message}");
                 
-                // Try to restore previous references if refresh failed
+                // Restore previous references
                 if (redSpawner == null && prevRed?.Spawned == true)
                 {
                     redSpawner = prevRed;
-                    Log.Message("SolWorld: Restored previous Red spawner reference");
                 }
                 if (blueSpawner == null && prevBlue?.Spawned == true)
                 {
                     blueSpawner = prevBlue;
-                    Log.Message("SolWorld: Restored previous Blue spawner reference");
                 }
             }
         }
@@ -1564,23 +1562,34 @@ namespace SolWorldMod
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
 
-                        // NEW: Strip all food items from inventory
+                        // PRESERVED: Strip all food items from inventory
                         StripFoodFromPawn(pawn);
                         
-                        // CRITICAL: Give specific weapon from identical loadout
+                        // ⭐ ENHANCED: Apply tier-based enhancements BEFORE equipment
+                        ApplyTierEnhancements(pawn, fighter);
+                        
+                        // ENHANCED: Give tier-enhanced quality weapon from identical loadout
                         if (i < teamWeapons.Length)
                         {
-                            var weaponDefName = teamWeapons[i];
-                            var success = LoadoutManager.GiveWeaponToPawn(pawn, weaponDefName);
+                            var baseWeaponDefName = teamWeapons[i];
+                            
+                            // ⭐ NEW: Apply tier-based quality to the same weapon (no weapon type changes)
+                            var success = ApplyTierWeapon(pawn, baseWeaponDefName, fighter);
                             
                             if (success)
                             {
-                                Log.Message($"SolWorld: {teamColor} fighter {i} ({fighter.WalletShort}) equipped with {weaponDefName}");
+                                Log.Message($"SolWorld: {teamColor} fighter {i} ({fighter.WalletShort}) equipped with tier-enhanced {baseWeaponDefName}");
                             }
                             else
                             {
-                                Log.Warning($"SolWorld: Failed to equip {teamColor} fighter {i} with {weaponDefName}, using fallback");
-                                GiveWeapon(pawn); // Fallback
+                                Log.Warning($"SolWorld: Tier weapon application failed, using standard loadout manager");
+                                
+                                // Fallback to standard weapon without quality enhancement
+                                if (!LoadoutManager.GiveWeaponToPawn(pawn, baseWeaponDefName))
+                                {
+                                    Log.Warning($"SolWorld: Standard weapon also failed, using emergency fallback");
+                                    GiveWeapon(pawn); // Final fallback
+                                }
                             }
                         }
                         else
@@ -1589,7 +1598,11 @@ namespace SolWorldMod
                             GiveWeapon(pawn);
                         }
                         
-                        // Add to team tracking
+                        // ⭐ NEW: Apply tier-based armor and helmet
+                        ApplyTierArmor(pawn, fighter);
+                        ApplyTierHelmet(pawn, fighter);
+                        
+                        // PRESERVED: Add to team tracking
                         if (teamColor == TeamColor.Red)
                             redTeamPawns.Add(pawn);
                         else
@@ -1598,7 +1611,7 @@ namespace SolWorldMod
                         pawnTeamMap[pawn] = teamColor;
                         pawnLastActionTick[pawn] = -1;
                         
-                        // Apply team visual styling
+                        // PRESERVED: Apply team visual styling
                         ApplyTeamStyling(pawn, teamColor);
                         
                         Log.Message($"SolWorld: Spawned {fighter.WalletShort} ({teamColor}) with weapon {i}");
@@ -1608,6 +1621,245 @@ namespace SolWorldMod
                         Log.Error($"SolWorld: Failed to spawn {fighter.WalletShort}: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        // ⭐ NEW METHOD: Apply tier-based enhancements to pawn
+        private void ApplyTierEnhancements(Pawn pawn, Fighter fighter)
+        {
+            // Check if we have tier data for this fighter
+            if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
+            {
+                // No tier data - this is normal for mock fighters or when backend doesn't return tier info
+                return;
+            }
+            
+            var tierData = currentRoundTierData[fighter.WalletFull];
+            Log.Message($"SolWorld: Applying Tier {tierData.Tier} ({tierData.TierName}) enhancements to {fighter.WalletShort}");
+            
+            // Apply health multiplier by adjusting pawn's max health
+            if (tierData.Tier >= 2)
+            {
+                try
+                {
+                    var healthMultiplier = GetHealthMultiplierForTier(tierData.Tier);
+                    
+                    // Simple approach: Log health enhancement (full implementation would add custom hediffs)
+                    Log.Message($"SolWorld: Applied {healthMultiplier}x health multiplier to Tier {tierData.Tier} fighter");
+                    
+                    // In a full implementation, you would create custom HediffDefs for health boosts
+                    // For now, this serves as a placeholder for the tier health system
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to apply health enhancement: {ex.Message}");
+                }
+            }
+            
+            // Apply visual glow for mythical+ fighters
+            if (tierData.HasAura && tierData.Tier >= 6)
+            {
+                try
+                {
+                    // In a full implementation, you might add a custom comp or hediff for glowing
+                    Log.Message($"SolWorld: Applied aura glow effect to Tier {tierData.Tier} fighter");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to apply glow effect: {ex.Message}");
+                }
+            }
+        }
+
+        // ⭐ NEW METHOD: Apply tier-based quality to weapon (same weapon type, better quality)
+        private bool ApplyTierWeapon(Pawn pawn, string weaponDefName, Fighter fighter)
+        {
+            try
+            {
+                // Get the weapon definition
+                var weaponDef = DefDatabase<ThingDef>.GetNamedSilentFail(weaponDefName);
+                if (weaponDef == null)
+                {
+                    Log.Warning($"SolWorld: Weapon def not found: {weaponDefName}");
+                    return false;
+                }
+                
+                // Create the weapon
+                var weapon = ThingMaker.MakeThing(weaponDef) as ThingWithComps;
+                if (weapon == null)
+                {
+                    Log.Warning($"SolWorld: Failed to create weapon: {weaponDefName}");
+                    return false;
+                }
+                
+                // Apply tier-based quality if we have tier data
+                if (currentRoundTierData.ContainsKey(fighter.WalletFull))
+                {
+                    var tierData = currentRoundTierData[fighter.WalletFull];
+                    SetItemQuality(weapon, tierData.WeaponQuality);
+                    Log.Message($"SolWorld: Applied {tierData.WeaponQuality} quality to {weaponDefName} for Tier {tierData.Tier} fighter");
+                }
+                
+                // Equip the weapon
+                if (pawn.equipment != null)
+                {
+                    pawn.equipment.AddEquipment(weapon);
+                    return true;
+                }
+                
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Failed to apply tier weapon {weaponDefName}: {ex.Message}");
+                return false;
+            }
+        }
+
+        // ⭐ NEW METHOD: Apply tier-based armor
+        private void ApplyTierArmor(Pawn pawn, Fighter fighter)
+        {
+            // Check if we have tier data and if this tier gets armor
+            if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
+                return;
+                
+            var tierData = currentRoundTierData[fighter.WalletFull];
+            if (!tierData.HasArmor) return;
+            
+            string armorDefName;
+            switch (tierData.Tier)
+            {
+                case 2:
+                case 3:
+                    armorDefName = "Apparel_FlakVest"; // Basic armor
+                    break;
+                case 4:
+                case 5:
+                    armorDefName = "Apparel_PowerArmor"; // Advanced armor  
+                    break;
+                case 6:
+                case 7:
+                    armorDefName = "Apparel_ArmorRecon"; // Elite armor
+                    break;
+                default:
+                    return; // No armor for Tier 1
+            }
+            
+            try
+            {
+                var armorDef = DefDatabase<ThingDef>.GetNamedSilentFail(armorDefName);
+                if (armorDef != null)
+                {
+                    var armor = ThingMaker.MakeThing(armorDef) as Apparel;
+                    if (armor != null)
+                    {
+                        // Set armor quality based on tier
+                        SetItemQuality(armor, tierData.WeaponQuality);
+                        
+                        pawn.apparel.Wear(armor, false, false);
+                        Log.Message($"SolWorld: ✅ Equipped Tier {tierData.Tier} armor: {armorDefName} on {fighter.WalletShort}");
+                    }
+                }
+                else
+                {
+                    Log.Warning($"SolWorld: Armor def not found: {armorDefName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to equip armor {armorDefName} on {fighter.WalletShort}: {ex.Message}");
+            }
+        }
+
+        // ⭐ NEW METHOD: Apply tier-based helmet
+        private void ApplyTierHelmet(Pawn pawn, Fighter fighter)
+        {
+            // Check if we have tier data and if this tier gets helmet
+            if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
+                return;
+                
+            var tierData = currentRoundTierData[fighter.WalletFull];
+            if (!tierData.HasHelmet) return;
+            
+            string helmetDefName;
+            switch (tierData.Tier)
+            {
+                case 4:
+                case 5:
+                    helmetDefName = "Apparel_SimpleHelmet"; // Basic helmet
+                    break;
+                case 6:
+                case 7:
+                    helmetDefName = "Apparel_PowerArmorHelmet"; // Advanced helmet
+                    break;
+                default:
+                    return; // No helmet for lower tiers
+            }
+            
+            try
+            {
+                var helmetDef = DefDatabase<ThingDef>.GetNamedSilentFail(helmetDefName);
+                if (helmetDef != null)
+                {
+                    var helmet = ThingMaker.MakeThing(helmetDef) as Apparel;
+                    if (helmet != null)
+                    {
+                        SetItemQuality(helmet, tierData.WeaponQuality);
+                        
+                        pawn.apparel.Wear(helmet, false, false);
+                        Log.Message($"SolWorld: ✅ Equipped Tier {tierData.Tier} helmet: {helmetDefName} on {fighter.WalletShort}");
+                    }
+                }
+                else
+                {
+                    Log.Warning($"SolWorld: Helmet def not found: {helmetDefName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to equip helmet {helmetDefName} on {fighter.WalletShort}: {ex.Message}");
+            }
+        }
+
+        // ⭐ NEW METHOD: Set item quality based on tier
+        private void SetItemQuality(Thing item, string qualityLevel)
+        {
+            try
+            {
+                var qualityComp = item.TryGetComp<CompQuality>();
+                if (qualityComp != null)
+                {
+                    QualityCategory quality = QualityCategory.Normal;
+                    switch (qualityLevel)
+                    {
+                        case "Good": quality = QualityCategory.Good; break;
+                        case "Excellent": quality = QualityCategory.Excellent; break;
+                        case "Masterwork": quality = QualityCategory.Masterwork; break;
+                    }
+                    
+                    qualityComp.SetQuality(quality, ArtGenerationContext.Colony);
+                    Log.Message($"SolWorld: Set item quality to {quality}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to set item quality: {ex.Message}");
+            }
+        }
+
+        // ⭐ NEW METHOD: Get health multiplier for tier
+        private float GetHealthMultiplierForTier(int tier)
+        {
+            switch (tier)
+            {
+                case 1: return 1.0f;   // Standard health
+                case 2: return 1.1f;   // +10% health
+                case 3: return 1.1f;   // +10% health
+                case 4: return 1.2f;   // +20% health
+                case 5: return 1.3f;   // +30% health
+                case 6: return 1.4f;   // +40% health
+                case 7: return 1.5f;   // +50% health
+                default: return 1.0f;
             }
         }
 

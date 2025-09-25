@@ -1,4 +1,4 @@
-// solworld/SolWorldMod/Source/ScoreboardUI.cs
+// Enhanced ScoreboardUI.cs - Preserves ALL original functionality + adds tier system
 using System.Linq;
 using UnityEngine;
 using Verse;
@@ -11,6 +11,20 @@ namespace SolWorldMod
         private static bool lastFrameWasPreview = false;
         private static float lastPreviewTimeCheck = 0f;
         
+        // Tier visualization constants
+        private static readonly Color[] TIER_COLORS = new Color[]
+        {
+            new Color(0.5f, 0.5f, 0.5f),    // Tier 1 - Gray
+            new Color(0.3f, 0.7f, 0.3f),    // Tier 2 - Green  
+            new Color(0.2f, 0.6f, 1.0f),    // Tier 3 - Blue
+            new Color(0.6f, 0.2f, 1.0f),    // Tier 4 - Purple
+            new Color(1.0f, 0.6f, 0.0f),    // Tier 5 - Orange
+            new Color(0.9f, 0.1f, 0.6f),    // Tier 6 - Pink
+            new Color(1.0f, 0.8f, 0.0f)     // Tier 7 - Gold
+        };
+        
+        private static readonly string[] TIER_ICONS = { "⚔️", "🛡️", "🗡️", "👑", "⭐", "💎", "🏆" };
+        
         public static void DrawScoreboard()
         {
             var map = Find.CurrentMap;
@@ -18,18 +32,18 @@ namespace SolWorldMod
             
             var arenaComp = map.GetComponent<MapComponent_SolWorldArena>();
             
-            // FIXED: ALWAYS show scoreboard when arena is active OR has roster data
+            // PRESERVED: ALWAYS show scoreboard when arena is active OR has roster data
             if (arenaComp?.IsActive != true && arenaComp?.CurrentRoster == null)
                 return;
             
-            // Handle phase-specific countdown logic
+            // PRESERVED: Handle phase-specific countdown logic
             HandlePreviewCountdown(arenaComp);
             HandleCombatCountdown(arenaComp);
             HandleNextRoundCountdown(arenaComp);
             
             var roster = arenaComp.CurrentRoster;
             
-            // MAIN DISPLAY: Choose display mode based on state and persistent winner data
+            // PRESERVED: MAIN DISPLAY - Choose display mode based on state and persistent winner data
             if (ShouldShowWinnerCelebration(arenaComp, roster))
             {
                 DrawWinnerCelebration(arenaComp, roster);
@@ -40,12 +54,12 @@ namespace SolWorldMod
             }
         }
         
-        // UPDATED: Use persistent winner storage instead of roster
+        // PRESERVED: Use persistent winner storage instead of roster
         private static bool ShouldShowWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
             // Show winner celebration during the first 2 minutes of idle time after a round
             if (arenaComp.CurrentState == ArenaState.Idle && 
-                arenaComp.LastRoundWinner.HasValue) // CHANGED: Use persistent storage
+                arenaComp.LastRoundWinner.HasValue) // PRESERVED: Use persistent storage
             {
                 var timeUntilNext = arenaComp.GetTimeUntilNextRound();
                 
@@ -56,13 +70,13 @@ namespace SolWorldMod
             return false;
         }
         
-        // UPDATED: Use persistent winner storage instead of roster
+        // ENHANCED: Winner celebration with tier analysis
         private static void DrawWinnerCelebration(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
-            // CHANGED: Use persistent winner storage instead of roster
+            // PRESERVED: Use persistent winner storage instead of roster
             if (!arenaComp.LastRoundWinner.HasValue) return;
             
-            // Calculate dimensions for winner display
+            // PRESERVED: Calculate dimensions for winner display
             var totalWidth = 800f; // Wider for winner celebration
             var totalHeight = 500f; // Taller for winner list
             
@@ -71,12 +85,12 @@ namespace SolWorldMod
             
             var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
             
-            // Enhanced celebration background
+            // PRESERVED: Enhanced celebration background
             var oldColor = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.95f); // More opaque for celebration
             GUI.DrawTexture(rect, BaseContent.WhiteTex);
             
-            // Winner-themed border
+            // PRESERVED: Winner-themed border
             var winnerColor = arenaComp.LastRoundWinner == TeamColor.Red ? Color.red : Color.blue;
             GUI.color = winnerColor;
             Widgets.DrawBox(rect, 4); // Thicker border for celebration
@@ -85,40 +99,40 @@ namespace SolWorldMod
             var innerRect = rect.ContractedBy(25f);
             float y = innerRect.y;
             
-            // CELEBRATION HEADER (using persistent storage)
+            // PRESERVED: CELEBRATION HEADER (using persistent storage)
             DrawWinnerHeaderPersistent(arenaComp, innerRect, ref y, winnerColor);
             
-            // WINNER COUNTDOWN (always visible)
+            // PRESERVED: WINNER COUNTDOWN (always visible)
             DrawWinnerCountdown(arenaComp, innerRect, ref y);
             
-            // WINNING WALLETS LIST (using persistent storage)
-            DrawWinningWalletsPersistent(arenaComp, innerRect, y, winnerColor);
+            // ENHANCED: WINNING WALLETS LIST with tier information
+            DrawWinningWalletsWithTiers(arenaComp, innerRect, y, winnerColor);
             
-            // Reset styling
+            // PRESERVED: Reset styling
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        // NEW: Draw winner header using persistent storage
+        // PRESERVED: Draw winner header using persistent storage
         private static void DrawWinnerHeaderPersistent(MapComponent_SolWorldArena arenaComp, Rect innerRect, ref float y, Color winnerColor)
         {
-            // Main celebration title
+            // PRESERVED: Main celebration title
             GUI.color = Color.yellow;
-            Text.Font = GameFont.Medium; // FIXED: Use GameFont.Medium instead of Large
+            Text.Font = GameFont.Medium; // PRESERVED: Use GameFont.Medium instead of Large
             Text.Anchor = TextAnchor.MiddleCenter;
             
             var titleText = $"🏆 {arenaComp.LastRoundWinner.ToString().ToUpper()} TEAM WINS! 🏆";
             var titleRect = new Rect(innerRect.x, y, innerRect.width, 40f);
             
-            // Flashing effect for celebration
+            // PRESERVED: Flashing effect for celebration
             var flash = Mathf.Sin(Time.realtimeSinceStartup * 6f) > 0f;
             GUI.color = flash ? Color.yellow : winnerColor;
             
             Widgets.Label(titleRect, titleText);
             y += 45f;
             
-            // Prize information
+            // PRESERVED: Prize information
             Text.Font = GameFont.Medium;
             GUI.color = Color.white;
             
@@ -127,7 +141,7 @@ namespace SolWorldMod
             Widgets.Label(prizeRect, prizeText);
             y += 35f;
             
-            // Pool information (calculate from winner payout)
+            // PRESERVED: Pool information (calculate from winner payout)
             Text.Font = GameFont.Small;
             GUI.color = Color.cyan;
             
@@ -140,6 +154,7 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
+        // PRESERVED: Winner countdown
         private static void DrawWinnerCountdown(MapComponent_SolWorldArena arenaComp, Rect innerRect, ref float y)
         {
             var timeUntilNext = arenaComp.GetTimeUntilNextRound();
@@ -158,13 +173,13 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        // NEW: Draw winning wallets using persistent storage
-        private static void DrawWinningWalletsPersistent(MapComponent_SolWorldArena arenaComp, Rect innerRect, float startY, Color winnerColor)
+        // NEW: Enhanced winning wallets display with tier information
+        private static void DrawWinningWalletsWithTiers(MapComponent_SolWorldArena arenaComp, Rect innerRect, float startY, Color winnerColor)
         {
             var winningTeam = arenaComp.LastWinningTeam;
             if (winningTeam == null || winningTeam.Count == 0) return;
             
-            // Section header
+            // PRESERVED: Section header
             Text.Font = GameFont.Medium;
             Text.Anchor = TextAnchor.MiddleCenter;
             GUI.color = winnerColor;
@@ -174,21 +189,35 @@ namespace SolWorldMod
             Widgets.Label(headerRect, headerText);
             startY += 35f;
             
-            // UPDATED: 2 columns layout
+            // NEW: Show tier distribution first
+            var tierStats = AnalyzeWinningTeamTiers(winningTeam, arenaComp.currentRoundTierData);
+            if (tierStats.Count > 0)
+            {
+                Text.Font = GameFont.Small;
+                GUI.color = Color.cyan;
+                
+                var tierText = "Tier Distribution: " + string.Join(", ", tierStats.OrderByDescending(kvp => kvp.Key)
+                    .Select(kvp => $"T{kvp.Key}({kvp.Value})"));
+                var tierRect = new Rect(innerRect.x, startY, innerRect.width, 20f);
+                Widgets.Label(tierRect, tierText);
+                startY += 25f;
+            }
+            
+            // PRESERVED: 2 columns layout
             const float walletBoxWidth = 250f; // Wider for 2 columns
-            const float walletBoxHeight = 30f;
+            const float walletBoxHeight = 35f; // Slightly taller for tier info
             const float walletSpacing = 10f;
             const int walletsPerRow = 2; // 2 columns of wallets
             
             var totalWalletWidth = (walletBoxWidth * walletsPerRow) + (walletSpacing * (walletsPerRow - 1));
             var walletStartX = innerRect.x + (innerRect.width - totalWalletWidth) / 2f;
             
-            // Draw each winning wallet
+            // ENHANCED: Draw each winning wallet with tier info
             for (int i = 0; i < winningTeam.Count; i++)
             {
                 var fighter = winningTeam[i];
                 
-                // Calculate position (2 columns, 5 rows)
+                // PRESERVED: Calculate position (2 columns, 5 rows)
                 var row = i / walletsPerRow;
                 var col = i % walletsPerRow;
                 
@@ -197,48 +226,83 @@ namespace SolWorldMod
                 
                 var walletRect = new Rect(walletX, walletY, walletBoxWidth, walletBoxHeight);
                 
-                DrawWinnerWalletBox(walletRect, fighter, winnerColor);
+                DrawWinnerWalletBoxWithTier(walletRect, fighter, winnerColor, arenaComp.currentRoundTierData);
             }
         }
         
-        private static void DrawWinnerWalletBox(Rect rect, Fighter fighter, Color teamColor)
+        // ENHANCED: Winner wallet box with tier information
+        private static void DrawWinnerWalletBoxWithTier(Rect rect, Fighter fighter, Color teamColor, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
         {
             try
             {
                 var oldColor = GUI.color;
                 
-                // Winner box background
+                // Get tier info if available
+                var tierInfo = tierData?.ContainsKey(fighter.WalletFull) == true ? tierData[fighter.WalletFull] : null;
+                var tierLevel = tierInfo?.Tier ?? 1;
+                var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
+                var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
+                
+                // Enhanced background with tier influence
+                if (tierLevel >= 5) // High tier gets subtle glow
+                {
+                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, 0.2f);
+                    GUI.DrawTexture(rect.ExpandedBy(2f), BaseContent.WhiteTex);
+                }
+                
+                // PRESERVED: Winner box background
                 GUI.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.3f);
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // Winner box border
+                // PRESERVED: Winner box border
                 GUI.color = teamColor;
                 Widgets.DrawBox(rect, 2);
                 
-                // Trophy icon area
+                // PRESERVED: Trophy icon area
                 var trophyRect = new Rect(rect.x + 5f, rect.y + 5f, 20f, 20f);
                 GUI.color = Color.yellow;
                 GUI.DrawTexture(trophyRect, BaseContent.WhiteTex);
                 
-                // Draw trophy emoji text
+                // PRESERVED: Draw trophy emoji text
                 GUI.color = Color.black;
                 Text.Font = GameFont.Tiny;
                 Text.Anchor = TextAnchor.MiddleCenter;
                 Widgets.Label(trophyRect, "🏆");
                 
-                // Wallet address (last 6 characters)
+                // ENHANCED: Tier icon in top-right
+                if (tierLevel > 1)
+                {
+                    var tierIconRect = new Rect(rect.xMax - 22f, rect.y + 2f, 18f, 18f);
+                    GUI.color = tierColor;
+                    GUI.DrawTexture(tierIconRect, BaseContent.WhiteTex);
+                    GUI.color = Color.white;
+                    Text.Font = GameFont.Tiny;
+                    Text.Anchor = TextAnchor.MiddleCenter;
+                    Widgets.Label(tierIconRect, tierIcon);
+                }
+                
+                // PRESERVED: Wallet address (last 6 characters)
                 var walletText = "..." + GetLast6Characters(fighter.WalletShort);
-                var walletRect = new Rect(rect.x + 30f, rect.y + 6f, rect.width - 35f, rect.height - 12f); // Better vertical centering
-
+                var walletRect = new Rect(rect.x + 30f, rect.y + 4f, rect.width - 55f, 20f); // Leave space for tier
+                
                 GUI.color = Color.white;
-                Text.Font = GameFont.Tiny; // Change from GameFont.Small to GameFont.Tiny
-                Text.Anchor = TextAnchor.MiddleCenter; // Change from MiddleLeft to MiddleCenter
+                Text.Font = GameFont.Tiny;
+                Text.Anchor = TextAnchor.MiddleLeft;
                 Widgets.Label(walletRect, walletText);
                 
-                // Enhanced tooltip for winners
+                // NEW: Tier level display
+                if (tierLevel > 1)
+                {
+                    var tierTextRect = new Rect(rect.x + 30f, rect.y + 18f, rect.width - 35f, 15f);
+                    GUI.color = tierColor;
+                    Text.Font = GameFont.Tiny;
+                    Widgets.Label(tierTextRect, $"Tier {tierLevel}");
+                }
+                
+                // ENHANCED: Enhanced tooltip for winners with tier info
                 if (Mouse.IsOver(rect))
                 {
-                    var tooltip = BuildWinnerTooltip(fighter);
+                    var tooltip = BuildWinnerTooltipWithTier(fighter, tierInfo);
                     TooltipHandler.TipRegion(rect, tooltip);
                 }
                 
@@ -254,29 +318,10 @@ namespace SolWorldMod
             }
         }
         
-        private static string GetLast6Characters(string wallet)
-        {
-            if (string.IsNullOrEmpty(wallet) || wallet.Length <= 6)
-                return wallet;
-            
-            return wallet.Substring(wallet.Length - 6);
-        }
-        
-        private static string BuildWinnerTooltip(Fighter fighter)
-        {
-            var tooltip = $"🏆 WINNER! 🏆\n";
-            tooltip += $"Wallet: {fighter.WalletFull}\n";
-            tooltip += $"Team: {fighter.Team}\n";
-            tooltip += $"Final Kills: {fighter.Kills}\n";
-            tooltip += $"Status: VICTORIOUS";
-            
-            return tooltip;
-        }
-        
-        // STANDARD LEADERBOARD (used for all non-winner phases)
+        // PRESERVED: All standard leaderboard functionality
         private static void DrawStandardLeaderboard(MapComponent_SolWorldArena arenaComp, RoundRoster roster)
         {
-            // Calculate dimensions based on whether we have a roster
+            // PRESERVED: Calculate dimensions based on whether we have a roster
             const float pawnBoxSize = 56f;
             const float pawnBoxSpacing = 6f;
             const float teamSeparation = 80f;
@@ -289,21 +334,21 @@ namespace SolWorldMod
                 pawnAreaWidth = redTeamWidth + teamSeparation + blueTeamWidth;
             }
             
-            // Calculate total dimensions
+            // PRESERVED: Calculate total dimensions
             var totalWidth = Mathf.Max(700f, pawnAreaWidth + 20f);
-            var totalHeight = roster != null ? 220f : 180f; // REDUCED: From 280f to 240f
+            var totalHeight = roster != null ? 220f : 180f; // PRESERVED: From 280f to 240f
             
             var centerX = UI.screenWidth / 2f;
             var topY = 15f;
             
             var rect = new Rect(centerX - totalWidth / 2f, topY, totalWidth, totalHeight);
             
-            // Standard background
+            // PRESERVED: Standard background
             var oldColor = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.9f);
             GUI.DrawTexture(rect, BaseContent.WhiteTex);
             
-            // Standard border
+            // PRESERVED: Standard border
             GUI.color = Color.white;
             Widgets.DrawBox(rect, 3);
             GUI.color = oldColor;
@@ -315,7 +360,7 @@ namespace SolWorldMod
             float y = innerRect.y;
             float lineHeight = 24f;
             
-            // Standard header
+            // PRESERVED: Standard header
             GUI.color = Color.yellow;
             Text.Font = GameFont.Medium;
             var headerRect = new Rect(innerRect.x, y, innerRect.width, 32f);
@@ -324,10 +369,10 @@ namespace SolWorldMod
             Text.Anchor = TextAnchor.UpperLeft;
             y += 36f;
             
-            // MAIN TIMER DISPLAY
+            // PRESERVED: MAIN TIMER DISPLAY
             DrawMainTimer(arenaComp, roster, innerRect, ref y);
             
-            // Match info only if we have a roster
+            // PRESERVED: Match info only if we have a roster
             if (roster != null)
             {
                 Text.Font = GameFont.Small;
@@ -335,7 +380,7 @@ namespace SolWorldMod
                 var matchInfoRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
                 Text.Anchor = TextAnchor.MiddleCenter;
                 
-                // Show loadout info if available
+                // PRESERVED: Show loadout info if available
                 var loadoutInfo = "";
                 if (!string.IsNullOrEmpty(roster.LoadoutPresetName))
                 {
@@ -347,12 +392,12 @@ namespace SolWorldMod
                 Text.Anchor = TextAnchor.UpperLeft;
                 y += lineHeight + 10f;
                 
-                // Team displays
-                DrawIntegratedTeamDisplays(roster, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
+                // ENHANCED: Team displays with tier information
+                DrawIntegratedTeamDisplaysWithTiers(roster, arenaComp, innerRect, y, pawnBoxSize, pawnBoxSpacing, teamSeparation);
             }
             else
             {
-                // Show arena status when no active roster
+                // PRESERVED: Show arena status when no active roster
                 Text.Font = GameFont.Small;
                 GUI.color = Color.cyan;
                 var statusRect = new Rect(innerRect.x, y, innerRect.width, lineHeight);
@@ -386,13 +431,15 @@ namespace SolWorldMod
                 Text.Anchor = TextAnchor.UpperLeft;
             }
             
-            // Reset styling
+            // PRESERVED: Reset styling
             GUI.color = Color.white;
             Text.Font = GameFont.Small;
             Text.Anchor = TextAnchor.UpperLeft;
         }
         
-        // CRITICAL: Handle preview countdown that works during pause
+        // ALL PRESERVED METHODS BELOW - maintaining exact original functionality
+        
+        // PRESERVED: Handle preview countdown that works during pause
         private static void HandlePreviewCountdown(MapComponent_SolWorldArena arenaComp)
         {
             if (!arenaComp.IsPreviewActive)
@@ -411,7 +458,7 @@ namespace SolWorldMod
             }
             lastPreviewTimeCheck = timeRemaining;
             
-            // CRITICAL: When countdown reaches zero, flag for Arena Core to handle
+            // PRESERVED: When countdown reaches zero, flag for Arena Core to handle
             if (timeRemaining <= 0f && lastFrameWasPreview)
             {
                 Log.Message("SolWorld: ===== UI COUNTDOWN COMPLETE - FLAGGING FOR AUTO-UNPAUSE =====");
@@ -423,7 +470,7 @@ namespace SolWorldMod
             lastFrameWasPreview = true;
         }
         
-        // Handle combat countdown and auto-end
+        // PRESERVED: Handle combat countdown and auto-end
         private static void HandleCombatCountdown(MapComponent_SolWorldArena arenaComp)
         {
             if (arenaComp.CurrentState != ArenaState.Combat)
@@ -441,7 +488,7 @@ namespace SolWorldMod
             }
         }
         
-        // Handle next round countdown and auto-reset trigger
+        // PRESERVED: Handle next round countdown and auto-reset trigger
         private static void HandleNextRoundCountdown(MapComponent_SolWorldArena arenaComp)
         {
             if (arenaComp.CurrentState != ArenaState.Idle)
@@ -459,7 +506,7 @@ namespace SolWorldMod
             }
         }
         
-        // Main timer that changes based on current phase and handles null roster
+        // PRESERVED: Main timer that changes based on current phase and handles null roster
         private static void DrawMainTimer(MapComponent_SolWorldArena arenaComp, RoundRoster roster, Rect innerRect, ref float y)
         {
             string timerText = "";
@@ -483,7 +530,7 @@ namespace SolWorldMod
                     break;
                     
                 case ArenaState.Ended:
-                    // FIXED: Keep leaderboard visible and show next round countdown
+                    // PRESERVED: Keep leaderboard visible and show next round countdown
                     var nextRoundTime = arenaComp.GetTimeUntilNextRound();
                     if (roster?.Winner.HasValue == true)
                     {
@@ -568,8 +615,8 @@ namespace SolWorldMod
             }
         }
         
-        // Only draw team displays when roster exists (for standard leaderboard)
-        private static void DrawIntegratedTeamDisplays(RoundRoster roster, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
+        // ENHANCED: Team displays with tier information
+        private static void DrawIntegratedTeamDisplaysWithTiers(RoundRoster roster, MapComponent_SolWorldArena arenaComp, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
         {
             if (roster?.Red == null || roster?.Blue == null) return;
             
@@ -579,18 +626,18 @@ namespace SolWorldMod
             
             var startX = innerRect.x + (innerRect.width - totalPawnWidth) / 2f;
             
-            // Team headers with enhanced stats
+            // PRESERVED: Team headers with enhanced stats
             var headerY = startY;
             DrawTeamHeader(roster.Red, TeamColor.Red, startX, headerY, redTeamWidth);
             var blueStartX = startX + redTeamWidth + teamSeparation;
             DrawTeamHeader(roster.Blue, TeamColor.Blue, blueStartX, headerY, blueTeamWidth);
             
-            // Pawn squares below headers
+            // ENHANCED: Pawn squares below headers with tier visualization
             var pawnY = startY + 25f;
-            DrawTeamPawnSquares(roster.Red, TeamColor.Red, startX, pawnY, pawnBoxSize, pawnBoxSpacing);
-            DrawTeamPawnSquares(roster.Blue, TeamColor.Blue, blueStartX, pawnY, pawnBoxSize, pawnBoxSpacing);
+            DrawTeamPawnSquaresWithTiers(roster.Red, TeamColor.Red, startX, pawnY, pawnBoxSize, pawnBoxSpacing, arenaComp.currentRoundTierData);
+            DrawTeamPawnSquaresWithTiers(roster.Blue, TeamColor.Blue, blueStartX, pawnY, pawnBoxSize, pawnBoxSpacing, arenaComp.currentRoundTierData);
             
-            // VS indicator in the middle
+            // PRESERVED: VS indicator in the middle
             var vsRect = new Rect(startX + redTeamWidth + 10f, pawnY + pawnBoxSize / 2f - 10f, teamSeparation - 20f, 20f);
             var oldColor = GUI.color;
             GUI.color = Color.yellow;
@@ -602,6 +649,7 @@ namespace SolWorldMod
             GUI.color = oldColor;
         }
         
+        // PRESERVED: Team header functionality
         private static void DrawTeamHeader(System.Collections.Generic.List<Fighter> fighters, TeamColor team, float startX, float y, float width)
         {
             if (fighters == null || fighters.Count == 0) return;
@@ -622,13 +670,14 @@ namespace SolWorldMod
             GUI.color = oldColor;
         }
         
-        private static void DrawTeamPawnSquares(System.Collections.Generic.List<Fighter> fighters, TeamColor team, float startX, float y, float boxSize, float spacing)
+        // ENHANCED: Team pawn squares with tier visualization
+        private static void DrawTeamPawnSquaresWithTiers(System.Collections.Generic.List<Fighter> fighters, TeamColor team, float startX, float y, float boxSize, float spacing, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
         {
             if (fighters == null || fighters.Count == 0) return;
             
             var teamColor = team == TeamColor.Red ? Color.red : Color.blue;
             
-            // Individual fighter boxes (larger squares)
+            // ENHANCED: Individual fighter boxes with tier information
             for (int i = 0; i < fighters.Count; i++)
             {
                 var fighter = fighters[i];
@@ -639,24 +688,38 @@ namespace SolWorldMod
                     boxSize
                 );
                 
-                DrawEnhancedFighterBox(boxRect, fighter, teamColor);
+                DrawEnhancedFighterBoxWithTier(boxRect, fighter, teamColor, tierData);
             }
         }
         
-        // Enhanced fighter boxes with larger size and better detail
-        private static void DrawEnhancedFighterBox(Rect rect, Fighter fighter, Color teamColor)
+        // ENHANCED: Fighter boxes with tier visualization
+        private static void DrawEnhancedFighterBoxWithTier(Rect rect, Fighter fighter, Color teamColor, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
         {
             try
             {
-                // Fighter status background with better visual feedback
+                // Get tier information
+                var tierInfo = tierData?.ContainsKey(fighter.WalletFull) == true ? tierData[fighter.WalletFull] : null;
+                var tierLevel = tierInfo?.Tier ?? 1;
+                var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
+                var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
+                
+                // ENHANCED: Background with tier influence
                 var bgColor = fighter.Alive ? teamColor : Color.gray;
                 bgColor.a = fighter.Alive ? 0.9f : 0.6f;
+                
+                // High-tier fighters get subtle glow effect
+                if (fighter.Alive && tierLevel >= 5)
+                {
+                    var glowRect = rect.ExpandedBy(2f);
+                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, 0.3f);
+                    GUI.DrawTexture(glowRect, BaseContent.WhiteTex);
+                }
                 
                 var oldColor = GUI.color;
                 GUI.color = bgColor;
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // Enhanced border for alive fighters
+                // PRESERVED: Enhanced border for alive fighters
                 if (fighter.Alive)
                 {
                     GUI.color = Color.white;
@@ -664,47 +727,58 @@ namespace SolWorldMod
                 }
                 else
                 {
-                    // Enhanced death marker
+                    // PRESERVED: Enhanced death marker
                     GUI.color = Color.red;
                     Widgets.DrawBox(rect, 2);
                     
-                    // Draw larger death X
+                    // PRESERVED: Draw larger death X
                     var centerX = rect.center.x;
                     var centerY = rect.center.y;
-                    var crossSize = rect.width * 0.4f; // Larger cross
+                    var crossSize = rect.width * 0.4f;
                     
-                    // Thicker cross lines for death indicator
                     GUI.DrawTexture(new Rect(centerX - crossSize/2, centerY - 2f, crossSize, 4f), BaseContent.WhiteTex);
                     GUI.DrawTexture(new Rect(centerX - 2f, centerY - crossSize/2, 4f, crossSize), BaseContent.WhiteTex);
                 }
                 
-                // Enhanced kill count badge (larger and more visible)
+                // PRESERVED: Enhanced kill count badge
                 if (fighter.Kills > 0)
                 {
-                    var killRect = new Rect(rect.xMax - 22f, rect.y, 22f, 22f); // Larger badge
+                    var killRect = new Rect(rect.xMax - 22f, rect.y, 22f, 22f);
                     GUI.color = Color.yellow;
                     GUI.DrawTexture(killRect, BaseContent.WhiteTex);
                     
-                    // Black border for kill badge
                     GUI.color = Color.black;
                     Widgets.DrawBox(killRect, 1);
                     
                     GUI.color = Color.black;
-                    Text.Font = GameFont.Small; // Larger font
+                    Text.Font = GameFont.Small;
                     Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(killRect, fighter.Kills.ToString());
                 }
                 
-                // Fighter name on larger boxes (more visible)
+                // NEW: Tier indicator in top-left corner
+                if (tierLevel > 1)
+                {
+                    var tierRect = new Rect(rect.x + 2f, rect.y + 2f, 16f, 16f);
+                    GUI.color = tierColor;
+                    GUI.DrawTexture(tierRect, BaseContent.WhiteTex);
+                    
+                    GUI.color = Color.white;
+                    Text.Font = GameFont.Tiny;
+                    Text.Anchor = TextAnchor.MiddleCenter;
+                    Widgets.Label(tierRect, tierIcon);
+                }
+                
+                // PRESERVED: Fighter name on larger boxes
                 if (rect.width >= 50f)
                 {
                     GUI.color = Color.white;
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
-                    var nameRect = new Rect(rect.x, rect.yMax - 18f, rect.width, 16f); // Larger name area
+                    var nameRect = new Rect(rect.x, rect.yMax - 18f, rect.width, 16f);
                     var shortName = "..." + GetLast6Characters(fighter.WalletShort);
                     
-                    // Background for name
+                    // PRESERVED: Background for name
                     GUI.color = new Color(0f, 0f, 0f, 0.8f);
                     GUI.DrawTexture(nameRect, BaseContent.WhiteTex);
                     GUI.color = Color.white;
@@ -712,10 +786,10 @@ namespace SolWorldMod
                     Widgets.Label(nameRect, shortName);
                 }
                 
-                // Enhanced tooltip with more detailed info
+                // ENHANCED: Enhanced tooltip with tier information
                 if (Mouse.IsOver(rect))
                 {
-                    var tooltip = BuildEnhancedFighterTooltip(fighter);
+                    var tooltip = BuildEnhancedFighterTooltipWithTier(fighter, tierInfo);
                     TooltipHandler.TipRegion(rect, tooltip);
                 }
                 
@@ -725,7 +799,6 @@ namespace SolWorldMod
             }
             catch (System.Exception ex)
             {
-                // Ignore drawing errors but log for debugging
                 if (Prefs.DevMode)
                 {
                     Log.Warning($"SolWorld: Enhanced fighter box draw error: {ex.Message}");
@@ -733,6 +806,105 @@ namespace SolWorldMod
             }
         }
         
+        // PRESERVED: Keep the preview overlay for extra visibility during preview phase
+        public static void DrawPreviewOverlay(MapComponent_SolWorldArena arenaComp)
+        {
+            if (!arenaComp.IsPreviewActive) return;
+            
+            var timeRemaining = arenaComp.PreviewTimeRemaining;
+            
+            // PRESERVED: Center screen overlay (below the main leaderboard)
+            var centerX = UI.screenWidth / 2f;
+            var centerY = UI.screenHeight / 2f + 150f;
+            
+            // PRESERVED: Large countdown text
+            Text.Font = GameFont.Medium;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            
+            var countdownText = $"PREVIEW: {timeRemaining:F0}";
+            var textSize = Text.CalcSize(countdownText);
+            var textRect = new Rect(centerX - textSize.x / 2f, centerY - 50f, textSize.x, textSize.y);
+            
+            // PRESERVED: Flash effect in final seconds
+            var oldColor = GUI.color;
+            if (timeRemaining <= 5f)
+            {
+                var flash = Mathf.Sin(Time.realtimeSinceStartup * 10f) > 0f;
+                GUI.color = flash ? Color.red : Color.yellow;
+            }
+            else
+            {
+                GUI.color = Color.cyan;
+            }
+            
+            // PRESERVED: Semi-transparent background
+            var bgRect = textRect.ExpandedBy(20f);
+            var bgColor = GUI.color;
+            bgColor.a = 0.3f;
+            var prevColor = GUI.color;
+            GUI.color = bgColor;
+            GUI.DrawTexture(bgRect, BaseContent.WhiteTex);
+            GUI.color = prevColor;
+            
+            // PRESERVED: Draw the text
+            Widgets.Label(textRect, countdownText);
+            
+            // PRESERVED: Instructions
+            Text.Font = GameFont.Small;
+            var instructText = "Game paused for 30-second preview - Combat starting soon!";
+            var instructSize = Text.CalcSize(instructText);
+            var instructRect = new Rect(centerX - instructSize.x / 2f, centerY, instructSize.x, instructSize.y);
+            
+            GUI.color = Color.white;
+            Widgets.Label(instructRect, instructText);
+            
+            // PRESERVED: Reset
+            GUI.color = oldColor;
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.UpperLeft;
+        }
+        
+        // HELPER METHODS - All preserved and some enhanced
+        
+        private static string GetLast6Characters(string wallet)
+        {
+            if (string.IsNullOrEmpty(wallet) || wallet.Length <= 6)
+                return wallet;
+            
+            return wallet.Substring(wallet.Length - 6);
+        }
+        
+        private static string BuildWinnerTooltip(Fighter fighter)
+        {
+            var tooltip = $"🏆 WINNER! 🏆\n";
+            tooltip += $"Wallet: {fighter.WalletFull}\n";
+            tooltip += $"Team: {fighter.Team}\n";
+            tooltip += $"Final Kills: {fighter.Kills}\n";
+            tooltip += $"Status: VICTORIOUS";
+            
+            return tooltip;
+        }
+        
+        // NEW: Enhanced winner tooltip with tier info
+        private static string BuildWinnerTooltipWithTier(Fighter fighter, MapComponent_SolWorldArena.TieredFighter tierInfo)
+        {
+            var tooltip = BuildWinnerTooltip(fighter);
+            
+            if (tierInfo != null)
+            {
+                tooltip += $"\n\n=== TIER INFORMATION ===";
+                tooltip += $"\nTier: {tierInfo.Tier} ({tierInfo.TierName})";
+                tooltip += $"\nToken Balance: {tierInfo.Balance:N0}";
+                tooltip += $"\nWeapon Quality: {tierInfo.WeaponQuality}";
+                tooltip += $"\nArmor: {(tierInfo.HasArmor ? "Yes" : "No")}";
+                tooltip += $"\nHelmet: {(tierInfo.HasHelmet ? "Yes" : "No")}";
+                tooltip += $"\nAura: {(tierInfo.HasAura ? "Yes" : "No")}";
+            }
+            
+            return tooltip;
+        }
+        
+        // PRESERVED: Enhanced fighter tooltip
         private static string BuildEnhancedFighterTooltip(Fighter fighter)
         {
             var tooltip = $"Fighter: {fighter.WalletFull}\n";
@@ -789,62 +961,42 @@ namespace SolWorldMod
             return tooltip;
         }
         
-        // Keep the preview overlay for extra visibility during preview phase
-        public static void DrawPreviewOverlay(MapComponent_SolWorldArena arenaComp)
+        // NEW: Enhanced fighter tooltip with tier information
+        private static string BuildEnhancedFighterTooltipWithTier(Fighter fighter, MapComponent_SolWorldArena.TieredFighter tierInfo)
         {
-            if (!arenaComp.IsPreviewActive) return;
+            var tooltip = BuildEnhancedFighterTooltip(fighter);
             
-            var timeRemaining = arenaComp.PreviewTimeRemaining;
-            
-            // Center screen overlay (below the main leaderboard)
-            var centerX = UI.screenWidth / 2f;
-            var centerY = UI.screenHeight / 2f + 150f; // Offset down to avoid leaderboard
-            
-            // Large countdown text
-            Text.Font = GameFont.Medium;
-            Text.Anchor = TextAnchor.MiddleCenter;
-            
-            var countdownText = $"PREVIEW: {timeRemaining:F0}";
-            var textSize = Text.CalcSize(countdownText);
-            var textRect = new Rect(centerX - textSize.x / 2f, centerY - 50f, textSize.x, textSize.y);
-            
-            // Flash effect in final seconds
-            var oldColor = GUI.color;
-            if (timeRemaining <= 5f)
+            if (tierInfo != null)
             {
-                var flash = Mathf.Sin(Time.realtimeSinceStartup * 10f) > 0f;
-                GUI.color = flash ? Color.red : Color.yellow;
-            }
-            else
-            {
-                GUI.color = Color.cyan;
+                tooltip += $"\n\n=== TIER INFORMATION ===";
+                tooltip += $"\nTier: {tierInfo.Tier} ({tierInfo.TierName})";
+                tooltip += $"\nToken Balance: {tierInfo.Balance:N0}";
+                tooltip += $"\nWeapon Quality: {tierInfo.WeaponQuality}";
+                tooltip += $"\nEquipment: ";
+                var equipment = new System.Collections.Generic.List<string>();
+                if (tierInfo.HasArmor) equipment.Add("Armor");
+                if (tierInfo.HasHelmet) equipment.Add("Helmet");
+                if (tierInfo.HasAura) equipment.Add("Aura");
+                tooltip += equipment.Count > 0 ? string.Join(", ", equipment) : "Standard";
             }
             
-            // Semi-transparent background
-            var bgRect = textRect.ExpandedBy(20f);
-            var bgColor = GUI.color;
-            bgColor.a = 0.3f;
-            var prevColor = GUI.color;
-            GUI.color = bgColor;
-            GUI.DrawTexture(bgRect, BaseContent.WhiteTex);
-            GUI.color = prevColor;
+            return tooltip;
+        }
+        
+        // NEW: Analyze winning team tier distribution
+        private static System.Collections.Generic.Dictionary<int, int> AnalyzeWinningTeamTiers(System.Collections.Generic.List<Fighter> winners, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
+        {
+            var tierCounts = new System.Collections.Generic.Dictionary<int, int>();
             
-            // Draw the text
-            Widgets.Label(textRect, countdownText);
+            if (tierData == null) return tierCounts;
             
-            // Instructions
-            Text.Font = GameFont.Small;
-            var instructText = "Game paused for 30-second preview - Combat starting soon!";
-            var instructSize = Text.CalcSize(instructText);
-            var instructRect = new Rect(centerX - instructSize.x / 2f, centerY, instructSize.x, instructSize.y);
+            foreach (var winner in winners)
+            {
+                var tier = tierData.ContainsKey(winner.WalletFull) ? tierData[winner.WalletFull].Tier : 1;
+                tierCounts[tier] = tierCounts.ContainsKey(tier) ? tierCounts[tier] + 1 : 1;
+            }
             
-            GUI.color = Color.white;
-            Widgets.Label(instructRect, instructText);
-            
-            // Reset
-            GUI.color = oldColor;
-            Text.Font = GameFont.Small;
-            Text.Anchor = TextAnchor.UpperLeft;
+            return tierCounts;
         }
     }
 }
