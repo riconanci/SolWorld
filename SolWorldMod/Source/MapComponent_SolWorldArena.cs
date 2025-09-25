@@ -1359,6 +1359,9 @@ namespace SolWorldMod
                     {
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
+
+                        // NEW: Strip all food items from inventory
+                        StripFoodFromPawn(pawn);
                         
                         // CRITICAL: Give specific weapon from identical loadout
                         if (i < teamWeapons.Length)
@@ -1401,6 +1404,42 @@ namespace SolWorldMod
                         Log.Error($"SolWorld: Failed to spawn {fighter.WalletShort}: {ex.Message}");
                     }
                 }
+            }
+        }
+
+        private void StripFoodFromPawn(Pawn pawn)
+        {
+            if (pawn?.inventory?.innerContainer == null)
+                return;
+
+            try
+            {
+                // Find all food/meal items in inventory
+                var foodItems = pawn.inventory.innerContainer
+                    .Where(thing => thing.def.IsIngestible || 
+                                thing.def.ingestible != null ||
+                                thing.def.defName.Contains("Meal") ||
+                                thing.def.defName.Contains("Pemmican") ||
+                                thing.def.defName.Contains("Chocolate") ||
+                                thing.def.category == ThingCategory.Item && 
+                                thing.def.IsNutritionGivingIngestible)
+                    .ToList();
+
+                // Remove each food item
+                foreach (var foodItem in foodItems)
+                {
+                    pawn.inventory.innerContainer.Remove(foodItem);
+                    Log.Message($"SolWorld: Stripped {foodItem.def.defName} from {pawn.Name}");
+                }
+
+                if (foodItems.Count > 0)
+                {
+                    Log.Message($"SolWorld: Removed {foodItems.Count} food items from {pawn.Name}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to strip food from {pawn.Name}: {ex.Message}");
             }
         }
 
@@ -1477,7 +1516,7 @@ namespace SolWorldMod
                 return null;
             }
         }
-        
+
         private void EnsurePawnMindStateSetup(Pawn pawn)
         {
             try

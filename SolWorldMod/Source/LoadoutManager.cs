@@ -97,10 +97,10 @@ namespace SolWorldMod
                 Description = "Explosive warfare with one grenadier per team",
                 Weapons = new WeaponLoadout[]
                 {
-                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 4, Description = "Assault Rifles" },
+                    new WeaponLoadout { DefName = "Gun_AssaultRifle", Count = 2, Description = "Assault Rifles" },
                     new WeaponLoadout { DefName = "Gun_Autopistol", Count = 3, Description = "Autopistols" },
-                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 2, Description = "Longswords" },
-                    new WeaponLoadout { DefName = "Gun_GrenadeLauncher", Count = 1, Description = "Grenade Launcher" }
+                    new WeaponLoadout { DefName = "MeleeWeapon_LongSword", Count = 3, Description = "Longswords" },
+                    new WeaponLoadout { DefName = "Gun_IncendiaryLauncher", Count = 2, Description = "Grenade Launcher" }
                 }
             },
 

@@ -73,12 +73,6 @@ namespace SolWorldMod
                 {
                     // Create sparks effect
                     FleckMaker.ThrowMicroSparks(DrawPos, Map);
-                    
-                    // Optional: Show "INVULNERABLE" text
-                    if (Prefs.DevMode)
-                    {
-                        MoteMaker.ThrowText(DrawPos, Map, "INVULNERABLE", Color.yellow, 2f);
-                    }
                 }
             }
             
