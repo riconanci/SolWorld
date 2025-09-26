@@ -181,6 +181,12 @@ namespace SolWorldMod
             blueTeamPawns.RemoveAll(p => p == null);
         }
         
+        private int GetTierForFighter(Fighter fighter)
+        {
+            return currentRoundTierData.ContainsKey(fighter.WalletFull) ? 
+                currentRoundTierData[fighter.WalletFull].Tier : 1;
+        }
+
         // Custom name rendering - add this override to MapComponent_SolWorldArena
         public override void MapComponentOnGUI()
         {
@@ -574,7 +580,7 @@ namespace SolWorldMod
             }
             catch (Exception ex)
             {
-                
+                Log.Warning($"SolWorld: UI overlay error: {ex.Message}");    
             }
         }
 
@@ -879,10 +885,11 @@ namespace SolWorldMod
                         var cryptoReporter = new Net.CryptoReporter();
                         var parsedResponse = cryptoReporter.ParseHoldersResponse(jsonResponse);
                         
-                        if (parsedResponse?.data?.fighters != null && parsedResponse.data.fighters.Length >= 20)
+                        if (parsedResponse?.data?.fighters != null && parsedResponse.data.fighters.Length > 0 && 
+                            parsedResponse?.data?.wallets != null && parsedResponse.data.wallets.Length >= 20)
                         {
-                            // SUCCESS: We have tiered fighters
-                            Log.Message("SolWorld: Extracted " + parsedResponse.data.fighters.Length + " tiered fighters from backend!");
+                            // SUCCESS: We have some tiered fighters and enough wallets
+                            Log.Message($"SolWorld: Extracted {parsedResponse.data.fighters.Length} tiered fighters from {parsedResponse.data.wallets.Length} total fighters!");
                             
                             // Store tier data for equipment assignment
                             StoreTierDataForRound(parsedResponse.data.fighters);
@@ -1530,7 +1537,6 @@ namespace SolWorldMod
 
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, TeamColor teamColor, Faction teamFaction)
         {
-            //Messages.Message($"DEBUG: SpawnTeam called for {teamColor} team with {fighters.Count} fighters", MessageTypeDefOf.PositiveEvent);
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
             
             // FIXED: Generate loadout ONCE for both teams at the start
@@ -1612,7 +1618,7 @@ namespace SolWorldMod
                 }
             }
             
-            // Spawn the fighters with their weapons
+            // Spawn the fighters with their weapons  
             for (int i = 0; i < fighters.Count; i++)
             {
                 var fighter = fighters[i];
@@ -1630,18 +1636,20 @@ namespace SolWorldMod
                         GenSpawn.Spawn(pawn, spawnPos, map);
                         fighter.PawnRef = pawn;
 
-                        // PRESERVED: Strip all food items from inventory
+                        // Strip food items
                         StripFoodFromPawn(pawn);
                         
-                        // ⭐ ENHANCED: Apply tier-based enhancements BEFORE equipment
+                        // ✅ Clear equipment first (add this if you have the method)
+                        if (HasTierData(fighter))
+                            ClearPawnEquipment(pawn);
+                        
+                        // ✅ Apply tier enhancements (handles armor & helmet internally)
                         ApplyTierEnhancements(pawn, fighter);
                         
-                        // ENHANCED: Give tier-enhanced quality weapon from identical loadout
+                        // ✅ Apply tier weapon with proper quality
                         if (i < teamWeapons.Length)
                         {
                             var baseWeaponDefName = teamWeapons[i];
-                            
-                            // ⭐ NEW: Apply tier-based quality to the same weapon (no weapon type changes)
                             var success = ApplyTierWeapon(pawn, baseWeaponDefName, fighter);
                             
                             if (success)
@@ -1650,27 +1658,20 @@ namespace SolWorldMod
                             }
                             else
                             {
-                                Log.Warning($"SolWorld: Tier weapon application failed, using standard loadout manager");
-                                
-                                // Fallback to standard weapon without quality enhancement
-                                if (!LoadoutManager.GiveWeaponToPawn(pawn, baseWeaponDefName))
-                                {
-                                    Log.Warning($"SolWorld: Standard weapon also failed, using emergency fallback");
-                                    GiveWeapon(pawn); // Final fallback
-                                }
+                                Log.Warning($"SolWorld: Tier weapon failed, using fallback");
+                                GiveWeapon(pawn);
                             }
                         }
                         else
                         {
-                            Log.Warning($"SolWorld: Fighter index {i} exceeds weapon array length {teamWeapons.Length}, using fallback");
                             GiveWeapon(pawn);
                         }
                         
-                        // ⭐ NEW: Apply tier-based armor and helmet
-                        ApplyTierArmor(pawn, fighter);
-                        ApplyTierHelmet(pawn, fighter);
+                        // ❌ REMOVE THESE DUPLICATE CALLS:
+                        // ApplyTierArmor(pawn, fighter);   // DELETE THIS LINE
+                        // ApplyTierHelmet(pawn, fighter);  // DELETE THIS LINE
                         
-                        // PRESERVED: Add to team tracking
+                        // Team tracking (keep this)
                         if (teamColor == TeamColor.Red)
                             redTeamPawns.Add(pawn);
                         else
@@ -1679,10 +1680,9 @@ namespace SolWorldMod
                         pawnTeamMap[pawn] = teamColor;
                         pawnLastActionTick[pawn] = -1;
                         
-                        // PRESERVED: Apply team visual styling
                         ApplyTeamStyling(pawn, teamColor);
                         
-                        Log.Message($"SolWorld: Spawned {fighter.WalletShort} ({teamColor}) with weapon {i}");
+                        Log.Message($"SolWorld: Spawned {fighter.WalletShort} ({teamColor}) with tier {GetTierForFighter(fighter)} equipment");
                     }
                     catch (Exception ex)
                     {
@@ -1692,7 +1692,7 @@ namespace SolWorldMod
             }
         }
 
-        // ⭐ NEW METHOD: Apply tier-based enhancements to pawn
+        // ⭐ FIXED: Apply tier enhancements INSTEAD OF standard equipment, not on top of it
         private void ApplyTierEnhancements(Pawn pawn, Fighter fighter)
         {
             // Skip if no tier data available
@@ -1707,13 +1707,16 @@ namespace SolWorldMod
             
             try
             {
+                // ⭐ NEW: Clear existing equipment FIRST to prevent duplication
+                ClearPawnEquipment(pawn);
+                
                 // Apply tier-based armor
                 if (tierData.HasArmor)
                 {
                     ApplyTierArmor(pawn, fighter);
                 }
                 
-                // Apply tier-based helmet
+                // Apply tier-based helmet  
                 if (tierData.HasHelmet)
                 {
                     ApplyTierHelmet(pawn, fighter);
@@ -1739,7 +1742,54 @@ namespace SolWorldMod
             }
         }
 
-        // ⭐ NEW METHOD: Apply tier-based quality to weapon (same weapon type, better quality)
+        // ⭐ NEW METHOD: Clear all equipment before applying tier gear
+        private void ClearPawnEquipment(Pawn pawn)
+        {
+            try
+            {
+                // Clear all equipped weapons
+                if (pawn.equipment?.AllEquipmentListForReading != null)
+                {
+                    var weapons = pawn.equipment.AllEquipmentListForReading.ToList();
+                    foreach (var weapon in weapons)
+                    {
+                        pawn.equipment.TryDropEquipment(weapon, out ThingWithComps droppedWeapon, pawn.PositionHeld);
+                        if (droppedWeapon != null)
+                        {
+                            droppedWeapon.Destroy(); // Destroy instead of dropping to prevent floor clutter
+                        }
+                    }
+                }
+                
+                // Clear all apparel (armor, helmets, clothes)
+                if (pawn.apparel?.WornApparel != null)
+                {
+                    var apparel = pawn.apparel.WornApparel.ToList();
+                    foreach (var item in apparel)
+                    {
+                        pawn.apparel.TryDrop(item, out Apparel droppedApparel);
+                        if (droppedApparel != null)
+                        {
+                            droppedApparel.Destroy(); // Destroy instead of dropping to prevent floor clutter
+                        }
+                    }
+                }
+                
+                Log.Message($"SolWorld: Cleared existing equipment for tier enhancement");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to clear equipment: {ex.Message}");
+            }
+        }
+
+        private bool HasTierData(Fighter fighter)
+        {
+            return currentRoundTierData.ContainsKey(fighter.WalletFull) && 
+                currentRoundTierData[fighter.WalletFull].Tier > 1;
+        }
+
+        // ⭐ FIXED: Ensure weapon quality is properly applied and visible
         private bool ApplyTierWeapon(Pawn pawn, string weaponDefName, Fighter fighter)
         {
             try
@@ -1752,26 +1802,37 @@ namespace SolWorldMod
                     return false;
                 }
                 
-                // Create the weapon
-                var weapon = ThingMaker.MakeThing(weaponDef) as ThingWithComps;
+                // Create the weapon with quality stuff
+                var weapon = ThingMaker.MakeThing(weaponDef, GenStuff.RandomStuffFor(weaponDef)) as ThingWithComps;
                 if (weapon == null)
                 {
                     Log.Warning($"SolWorld: Failed to create weapon: {weaponDefName}");
                     return false;
                 }
                 
-                // Apply tier-based quality if we have tier data
+                // ⭐ CRITICAL FIX: Apply tier-based quality BEFORE equipping
                 if (currentRoundTierData.ContainsKey(fighter.WalletFull))
                 {
                     var tierData = currentRoundTierData[fighter.WalletFull];
+                    
+                    // Set quality immediately after creation
                     SetItemQuality(weapon, tierData.WeaponQuality);
-                    Log.Message($"SolWorld: Applied {tierData.WeaponQuality} quality to {weaponDefName} for Tier {tierData.Tier} fighter");
+                    
+                    Log.Message($"SolWorld: Created {tierData.WeaponQuality} quality {weaponDefName} for Tier {tierData.Tier} fighter");
+                    
+                    // Double-check that quality was applied
+                    var qualityComp = weapon.TryGetComp<CompQuality>();
+                    if (qualityComp != null)
+                    {
+                        Log.Message($"SolWorld: Weapon quality verification: {qualityComp.Quality}");
+                    }
                 }
                 
                 // Equip the weapon
                 if (pawn.equipment != null)
                 {
                     pawn.equipment.AddEquipment(weapon);
+                    Log.Message($"SolWorld: Successfully equipped tier weapon: {weaponDefName}");
                     return true;
                 }
                 
@@ -1781,6 +1842,34 @@ namespace SolWorldMod
             {
                 Log.Error($"SolWorld: Failed to apply tier weapon {weaponDefName}: {ex.Message}");
                 return false;
+            }
+        }
+
+        private void EnsurePawnHealthStability(Pawn pawn)
+        {
+            try
+            {
+                // Ensure health tracker is properly initialized
+                if (pawn?.health?.hediffSet == null)
+                {
+                    Log.Warning($"SolWorld: Pawn {pawn?.Name} has null health components, regenerating");
+                    return;
+                }
+
+                // Ensure all body parts are properly initialized
+                if (pawn.health.hediffSet.hediffs == null)
+                {
+                    pawn.health.hediffSet.hediffs = new List<Hediff>();
+                }
+
+                // Force refresh health state to prevent null references
+                pawn.health.capacities.Notify_CapacityLevelsDirty();
+
+                Log.Message($"SolWorld: Health validation passed for {pawn.Name}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Health validation failed for pawn: {ex.Message}");
             }
         }
 
@@ -2086,6 +2175,7 @@ namespace SolWorldMod
                 pawn.Name = new NameSingle(fighter.WalletShort);
                 
                 // Strip all existing headwear to show hair and prepare for tier-based helmets
+                EnsurePawnHealthStability(pawn);
                 StripAllHeadwear(pawn);
                 EnsurePawnMindStateSetup(pawn);
                 GiveWeapon(pawn);

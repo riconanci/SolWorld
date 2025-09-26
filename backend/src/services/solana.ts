@@ -121,6 +121,32 @@ export class SolanaService {
   }
 
   /**
+   * Check if connection is healthy
+   */
+  async checkConnection(): Promise<boolean> {
+    try {
+      const version = await this.connection.getVersion();
+      console.log('Solana connection healthy:', version);
+      return true;
+    } catch (error) {
+      console.error('Solana connection failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get current slot for debugging
+   */
+  async getCurrentSlot(): Promise<number> {
+    try {
+      return await this.connection.getSlot();
+    } catch (error) {
+      console.error('Failed to get current slot:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Get token statistics for monitoring
    */
   async getTokenStats(): Promise<TokenStats> {

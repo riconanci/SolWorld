@@ -1,6 +1,7 @@
 // SolWorldMod/Source/Net/CryptoReporter.cs
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Verse;
 using SolWorldMod.Security;
@@ -290,9 +291,9 @@ namespace SolWorldMod.Net
                     response.data.roundRewardTotalSol = ExtractFloatValue(json, "roundRewardTotalSol");
                     response.data.payoutPercent = ExtractFloatValue(json, "payoutPercent");
                     
-                    // NEW: Extract fighters array with tier data
+                    // NEW: Extract fighters array with tier data - PROPER JSON PARSING
                     response.data.fighters = ExtractFightersFromJson(json);
-                    
+                   
                     // Extract meta information
                     response.meta = new HoldersMeta
                     {
@@ -361,80 +362,304 @@ namespace SolWorldMod.Net
             }
         }
 
+        // ⭐ COMPLETELY REWRITTEN: Proper JSON parsing instead of hardcoded mappings
         private TieredFighter[] ExtractFightersFromJson(string json)
         {
             var fighters = new List<TieredFighter>();
             
-            // Extract the specific tier data we can see in your JSON
-            var tierMappings = new Dictionary<string, (int tier, string name, string quality, bool armor, bool helmet, bool aura)>
+            try
             {
-                {"ZG98FUCjb8mJ824Gbs6RsgVmr1FhXb2oNiJHa2dwmPd", (4, "Combat Specialist", "Good", true, true, false)},
-                {"9XUfXpwKU6poPr28GT4fFej5JW1Bsgr4WgKo4P7r8EEL", (7, "Godlike Destroyer", "Masterwork", true, true, true)},
-                {"omUP3B5YXqtyoUrvdfmgVwaP4EscswAQYWiUHKmXzEHv", (2, "Armored Veteran", "Normal", true, false, false)},
-                {"eV4CpXNtZGw1AAKEdVQiWzz3PE1ABKjiZcDeTA1dT7Z6", (3, "Elite Warrior", "Good", true, false, false)},
-                {"o4nmjFdQxPt86a5gvxkJN7tf1o1yq4Tu3mPvJKyuv1Zk", (4, "Combat Specialist", "Good", true, true, false)},
-                {"ANJ2XY7foBr4r2EjNoKAYQe7f1pKCR4KhxuJ2yH8RJ5T", (4, "Combat Specialist", "Good", true, true, false)},
-                {"ugkZPBKGRDU7kWwhQujmh4i8UcCtmKU8MZjnzHdzqsNE", (5, "Legendary Champion", "Excellent", true, true, false)},
-                {"z7NTT3xFJym4uuwgapXhZRwyTwZGszqwYUYws48q9f5x", (4, "Combat Specialist", "Good", true, true, false)},
-                {"9xNtPbwDxqHC7Qjac9M4hUHFzEUcPNHuBFHgZ3UHKaNN", (7, "Godlike Destroyer", "Masterwork", true, true, true)},
-                {"8KfsJ5McDcxPuR4bJ1ZjsYDScU5HchkZsuo3oFHhvZPc", (5, "Legendary Champion", "Excellent", true, true, false)},
-                {"Q4epbKVqamwgByS3RVjArDcPnTCCgtXKUkFDQ1SZd2r7", (3, "Elite Warrior", "Good", true, false, false)},
-                {"S4HaBk1Gd8erFpdM6GBNAhHorRQEw22XMh13uSvf62YK", (4, "Combat Specialist", "Good", true, true, false)}
-            };
-            
-            var wallets = ExtractWalletsFromJson(json);
-            
-            for (int i = 0; i < wallets.Length && i < 20; i++)
-            {
-                var wallet = wallets[i];
-                var (tier, name, quality, armor, helmet, aura) = tierMappings.ContainsKey(wallet) ? tierMappings[wallet] : (1, "Basic Fighter", "Normal", false, false, false);
+                Log.Message("SolWorld: Extracting fighters with proper JSON parsing...");
                 
-                fighters.Add(new TieredFighter
+                // Find the fighters array in the JSON
+                var fightersStart = json.IndexOf("\"fighters\":[");
+                if (fightersStart == -1) 
+                {
+                    Log.Warning("SolWorld: No fighters array found in JSON - using fallback parsing");
+                    return CreateFallbackFighters(json);
+                }
+                
+                // Extract the fighters array content
+                var fightersArrayStart = fightersStart + 12; // Skip past "fighters":[
+                var fightersArrayEnd = json.IndexOf("]", fightersArrayStart);
+                
+                if (fightersArrayEnd == -1)
+                {
+                    Log.Warning("SolWorld: Could not find end of fighters array");
+                    return CreateFallbackFighters(json);
+                }
+                
+                var fightersSection = json.Substring(fightersArrayStart, fightersArrayEnd - fightersArrayStart);
+                Log.Message($"SolWorld: Extracted fighters section: {fightersSection.Length} characters");
+                
+                // Split by fighter object separators
+                var fighterParts = fightersSection.Split(new string[] { "},{" }, StringSplitOptions.RemoveEmptyEntries);
+                Log.Message($"SolWorld: Found {fighterParts.Length} fighter parts to process");
+                
+                for (int i = 0; i < fighterParts.Length; i++)
+                {
+                    try
+                    {
+                        var fighterJson = fighterParts[i].Trim();
+                        
+                        // Add missing braces back (they get removed by the split)
+                        if (!fighterJson.StartsWith("{")) fighterJson = "{" + fighterJson;
+                        if (!fighterJson.EndsWith("}")) fighterJson = fighterJson + "}";
+                        
+                        Log.Message($"SolWorld: Processing fighter {i + 1}: {fighterJson.Substring(0, Math.Min(50, fighterJson.Length))}...");
+                        
+                        var fighter = ParseSingleFighterFromJson(fighterJson);
+                        if (fighter != null)
+                        {
+                            fighters.Add(fighter);
+                            Log.Message($"SolWorld: Successfully parsed fighter {fighter.wallet.Substring(0, 8)}... as Tier {fighter.tier.tier} ({fighter.tier.name})");
+                        }
+                        else
+                        {
+                            Log.Warning($"SolWorld: Failed to parse fighter {i + 1}");
+                        }
+                    }
+                    catch (Exception fighterEx)
+                    {
+                        Log.Warning($"SolWorld: Exception parsing fighter {i + 1}: {fighterEx.Message}");
+                    }
+                }
+                
+                if (fighters.Count > 0)
+                {
+                    Log.Message($"SolWorld: Successfully parsed {fighters.Count} fighters with tier data");
+                    
+                    Log.Message($"SolWorld: JSON parsing completed - found {fighters.Count} fighters total");
+                    Log.Message($"SolWorld: Expected ~20 fighters from backend tier distribution");
+                
+                    // Log tier distribution
+                    var tierCounts = new Dictionary<int, int>();
+                    foreach (var fighter in fighters)
+                    {
+                        var tier = fighter.tier.tier;
+                        tierCounts[tier] = (tierCounts.ContainsKey(tier) ? tierCounts[tier] : 0) + 1;
+                    }
+                    
+                    foreach (var kvp in tierCounts.OrderBy(x => x.Key))
+                    {
+                        Log.Message($"SolWorld: {kvp.Value}x Tier {kvp.Key}");
+                    }
+                }
+                else
+                {
+                    Log.Warning("SolWorld: No fighters parsed, using fallback");
+                    return CreateFallbackFighters(json);
+                }
+                
+                return fighters.ToArray();
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Failed to parse fighters JSON: {ex.Message}");
+                return CreateFallbackFighters(json);
+            }
+        }
+
+        private TieredFighter ParseSingleFighterFromJson(string fighterJson)
+        {
+            try
+            {
+                var wallet = ExtractJsonValue(fighterJson, "wallet");
+                var balance = ExtractFloatValue(fighterJson, "balance");
+                
+                if (string.IsNullOrEmpty(wallet))
+                {
+                    Log.Warning("SolWorld: Fighter missing wallet address");
+                    return null;
+                }
+                
+                // Extract the tier object
+                var tierStart = fighterJson.IndexOf("\"tier\":{");
+                if (tierStart == -1) 
+                {
+                    Log.Warning($"SolWorld: No tier data found for {wallet.Substring(0, 8)}..., using Tier 1");
+                    return CreateDefaultFighter(wallet, balance);
+                }
+                
+                var tierSection = ExtractNestedObject(fighterJson, tierStart + 7);
+                
+                // Extract tier properties
+                var tierNum = ExtractIntValue(tierSection, "tier");
+                var tierName = ExtractJsonValue(tierSection, "name") ?? GetTierName(tierNum);
+                var weaponQuality = ExtractJsonValue(tierSection, "weaponQuality") ?? "Normal";
+                var hasArmor = ExtractBoolValue(tierSection, "hasArmor");
+                var hasHelmet = ExtractBoolValue(tierSection, "hasHelmet");
+                var hasAura = ExtractBoolValue(tierSection, "hasAura");
+                
+                // Validate tier number
+                if (tierNum < 1 || tierNum > 7)
+                {
+                    Log.Warning($"SolWorld: Invalid tier {tierNum} for {wallet.Substring(0, 8)}..., using Tier 1");
+                    tierNum = 1;
+                    tierName = "Basic Fighter";
+                    weaponQuality = "Normal";
+                    hasArmor = false;
+                    hasHelmet = false;
+                    hasAura = false;
+                }
+                
+                return new TieredFighter
                 {
                     wallet = wallet,
-                    balance = 100000f,
+                    balance = balance,
                     tier = new TierInfo
                     {
-                        tier = tier,
-                        name = name,
-                        weaponQuality = quality,
-                        hasArmor = armor,
-                        hasHelmet = helmet,
-                        hasAura = aura
+                        tier = tierNum,
+                        name = tierName,
+                        weaponQuality = weaponQuality,
+                        hasArmor = hasArmor,
+                        hasHelmet = hasHelmet,
+                        hasAura = hasAura,
+                        minBalance = GetMinBalanceForTier(tierNum),
+                        damageMultiplier = GetDamageMultiplierForTier(tierNum),
+                        accuracyBonus = GetAccuracyBonusForTier(tierNum),
+                        healthMultiplier = GetHealthMultiplierForTier(tierNum),
+                        tierIcon = GetTierIcon(tierNum),
+                        borderColor = GetBorderColor(tierNum),
+                        description = $"Tier {tierNum} fighter with enhanced equipment",
+                        glowColor = tierNum >= 6 ? GetGlowColor(tierNum) : null
                     }
-                });
-                
-                Log.Message($"SolWorld: Mapped {wallet.Substring(0, 8)}... to Tier {tier} ({name})");
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Failed to parse single fighter: {ex.Message}");
+                return null;
+            }
+        }
+
+        private TieredFighter CreateDefaultFighter(string wallet, float balance)
+        {
+            return new TieredFighter
+            {
+                wallet = wallet,
+                balance = balance,
+                tier = CreateDefaultTierInfo()
+            };
+        }
+
+        private TieredFighter[] CreateFallbackFighters(string json)
+        {
+            // If JSON parsing fails, extract wallets and create basic fighters
+            var wallets = ExtractWalletsFromJson(json);
+            var fighters = new List<TieredFighter>();
+            
+            foreach (var wallet in wallets)
+            {
+                fighters.Add(CreateDefaultFighter(wallet, 100000f));
             }
             
-            Log.Message($"SolWorld: Created {fighters.Count} fighters with tier mapping");
+            Log.Message($"SolWorld: Created {fighters.Count} fallback fighters (all Tier 1)");
             return fighters.ToArray();
         }
 
-        private int ExtractTierForWallet(string json, string wallet)
+        // Helper methods for tier properties
+        private int GetMinBalanceForTier(int tier)
         {
-            // Find this wallet in the JSON and extract its tier number
-            var walletIndex = json.IndexOf($"\"{wallet}\"");
-            if (walletIndex == -1) return 1;
-            
-            var tierIndex = json.IndexOf("\"tier\":", walletIndex);
-            if (tierIndex == -1) return 1;
-            
-            var numberStart = tierIndex + 7;
-            var numberEnd = json.IndexOf(",", numberStart);
-            
-            var tierStr = json.Substring(numberStart, numberEnd - numberStart);
-            return int.TryParse(tierStr, out var tier) ? tier : 1;
+            switch (tier)
+            {
+                case 1: return 50000;
+                case 2: return 100000;
+                case 3: return 150000;
+                case 4: return 250000;
+                case 5: return 500000;
+                case 6: return 1000000;
+                case 7: return 1500000;
+                default: return 50000;
+            }
         }
 
-        private string GetWeaponQualityForTier(int tier)
+        private float GetDamageMultiplierForTier(int tier)
         {
-            if (tier >= 7) return "Masterwork";
-            if (tier >= 5) return "Excellent"; 
-            if (tier >= 3) return "Good";
-            return "Normal";
+            switch (tier)
+            {
+                case 1: return 1.0f;
+                case 2: return 1.0f;
+                case 3: return 1.15f;
+                case 4: return 1.15f;
+                case 5: return 1.3f;
+                case 6: return 1.3f;
+                case 7: return 1.5f;
+                default: return 1.0f;
+            }
         }
 
+        private float GetAccuracyBonusForTier(int tier)
+        {
+            switch (tier)
+            {
+                case 1: return 0.0f;
+                case 2: return 0.05f;
+                case 3: return 0.1f;
+                case 4: return 0.15f;
+                case 5: return 0.2f;
+                case 6: return 0.25f;
+                case 7: return 0.3f;
+                default: return 0.0f;
+            }
+        }
+
+        private float GetHealthMultiplierForTier(int tier)
+        {
+            switch (tier)
+            {
+                case 1: return 1.0f;
+                case 2: return 1.1f;
+                case 3: return 1.1f;
+                case 4: return 1.2f;
+                case 5: return 1.3f;
+                case 6: return 1.4f;
+                case 7: return 1.5f;
+                default: return 1.0f;
+            }
+        }
+
+        private string GetTierIcon(int tier)
+        {
+            switch (tier)
+            {
+                case 1: return "⚔️";
+                case 2: return "🛡️";
+                case 3: return "🗡️";
+                case 4: return "👑";
+                case 5: return "⭐";
+                case 6: return "💎";
+                case 7: return "🏆";
+                default: return "⚔️";
+            }
+        }
+
+        private string GetBorderColor(int tier)
+        {
+            switch (tier)
+            {
+                case 1: return "#888888";
+                case 2: return "#4CAF50";
+                case 3: return "#2196F3";
+                case 4: return "#9C27B0";
+                case 5: return "#FF9800";
+                case 6: return "#E91E63";
+                case 7: return "#FFD700";
+                default: return "#888888";
+            }
+        }
+
+        private string GetGlowColor(int tier)
+        {
+            switch (tier)
+            {
+                case 6: return "cyan";
+                case 7: return "gold";
+                default: return null;
+            }
+        }
+
+        // PRESERVED: All original tier parsing methods (kept as fallbacks)
         private TieredFighter ParseSingleFighter(string fighterJson)
         {
             try
@@ -613,14 +838,14 @@ namespace SolWorldMod.Net
                 case 3: return "Elite Warrior";
                 case 4: return "Combat Specialist";
                 case 5: return "Legendary Champion";
-                case 6: return "Warlord";
+                case 6: return "Mythical Warlord";
                 case 7: return "Godlike Destroyer";
                 default: return "Unknown";
             }
         }
     }
 
-    // Simple JSON helper class - basic implementation
+    // Simple JSON helper class - basic implementation (PRESERVED)
     public static class SimpleJson
     {
         public static string Serialize(object obj)
