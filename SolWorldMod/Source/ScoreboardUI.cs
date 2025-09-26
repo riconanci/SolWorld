@@ -1,4 +1,4 @@
-// Enhanced ScoreboardUI.cs - Preserves ALL original functionality + adds tier system
+// Enhanced ScoreboardUI.cs - Preserves ALL original functionality + adds complete visual effects system
 using System.Linq;
 using UnityEngine;
 using Verse;
@@ -11,6 +11,10 @@ namespace SolWorldMod
         private static bool lastFrameWasPreview = false;
         private static float lastPreviewTimeCheck = 0f;
         
+        // Enhanced visual effects timing
+        private static float glowPulseTime = 0f;
+        private static float auraRotation = 0f;
+        
         // Tier visualization constants
         private static readonly Color[] TIER_COLORS = new Color[]
         {
@@ -19,14 +23,30 @@ namespace SolWorldMod
             new Color(0.2f, 0.6f, 1.0f),    // Tier 3 - Blue
             new Color(0.6f, 0.2f, 1.0f),    // Tier 4 - Purple
             new Color(1.0f, 0.6f, 0.0f),    // Tier 5 - Orange
-            new Color(0.9f, 0.1f, 0.6f),    // Tier 6 - Pink
-            new Color(1.0f, 0.8f, 0.0f)     // Tier 7 - Gold
+            new Color(0.9f, 0.1f, 0.6f),    // Tier 6 - Pink (Mythical)
+            new Color(1.0f, 0.8f, 0.0f)     // Tier 7 - Gold (Godlike)
         };
         
         private static readonly string[] TIER_ICONS = { "⚔️", "🛡️", "🗡️", "👑", "⭐", "💎", "🏆" };
         
+        // Enhanced aura colors for high-tier fighters
+        private static readonly Color[] AURA_COLORS = new Color[]
+        {
+            Color.clear,                     // Tier 1-5 - No aura
+            Color.clear,                     // 
+            Color.clear,                     // 
+            Color.clear,                     // 
+            Color.clear,                     // 
+            new Color(0f, 1f, 1f, 0.4f),     // Tier 6 - Cyan aura (Mythical Warlord)
+            new Color(1f, 0.8f, 0f, 0.5f)   // Tier 7 - Gold aura (Godlike Destroyer)
+        };
+        
         public static void DrawScoreboard()
         {
+            // Update visual effect timers
+            glowPulseTime += Time.unscaledDeltaTime;
+            auraRotation += Time.unscaledDeltaTime * 30f; // 30 degrees per second
+            
             var map = Find.CurrentMap;
             if (map == null) return;
             
@@ -230,7 +250,7 @@ namespace SolWorldMod
             }
         }
         
-        // ENHANCED: Winner wallet box with tier information
+        // ENHANCED: Winner wallet box with tier information and visual effects
         private static void DrawWinnerWalletBoxWithTier(Rect rect, Fighter fighter, Color teamColor, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
         {
             try
@@ -243,11 +263,18 @@ namespace SolWorldMod
                 var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
                 var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
                 
-                // Enhanced background with tier influence
-                if (tierLevel >= 5) // High tier gets subtle glow
+                // ENHANCED: Winner celebration aura for high-tier winners
+                if (tierLevel >= 6)
                 {
-                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, 0.2f);
-                    GUI.DrawTexture(rect.ExpandedBy(2f), BaseContent.WhiteTex);
+                    DrawWinnerCelebrationAura(rect, tierLevel, tierColor);
+                }
+                
+                // Enhanced background with tier influence
+                if (tierLevel >= 5) // High tier gets enhanced winner glow
+                {
+                    var celebrationGlow = 0.4f + 0.3f * Mathf.Sin(glowPulseTime * 2f);
+                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, celebrationGlow);
+                    GUI.DrawTexture(rect.ExpandedBy(3f), BaseContent.WhiteTex);
                 }
                 
                 // PRESERVED: Winner box background
@@ -269,12 +296,26 @@ namespace SolWorldMod
                 Text.Anchor = TextAnchor.MiddleCenter;
                 Widgets.Label(trophyRect, "🏆");
                 
-                // ENHANCED: Tier icon in top-right
+                // ENHANCED: Tier icon in top-right with celebration effects
                 if (tierLevel > 1)
                 {
                     var tierIconRect = new Rect(rect.xMax - 22f, rect.y + 2f, 18f, 18f);
-                    GUI.color = tierColor;
+                    
+                    // Enhanced tier background for winners
+                    GUI.color = new Color(0f, 0f, 0f, 0.9f);
                     GUI.DrawTexture(tierIconRect, BaseContent.WhiteTex);
+                    
+                    GUI.color = tierColor;
+                    Widgets.DrawBox(tierIconRect, 1);
+                    
+                    // Celebration sparkle for high-tier winners
+                    if (tierLevel >= 6)
+                    {
+                        var sparkleAlpha = 0.8f + 0.2f * Mathf.Sin(glowPulseTime * 6f);
+                        GUI.color = new Color(1f, 1f, 0f, sparkleAlpha);
+                        GUI.DrawTexture(tierIconRect.ExpandedBy(2f), BaseContent.WhiteTex);
+                    }
+                    
                     GUI.color = Color.white;
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
@@ -692,7 +733,7 @@ namespace SolWorldMod
             }
         }
         
-        // ENHANCED: Fighter boxes with tier visualization
+        // ENHANCED: Fighter boxes with full tier visualization including auras
         private static void DrawEnhancedFighterBoxWithTier(Rect rect, Fighter fighter, Color teamColor, System.Collections.Generic.Dictionary<string, MapComponent_SolWorldArena.TieredFighter> tierData)
         {
             try
@@ -703,16 +744,20 @@ namespace SolWorldMod
                 var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
                 var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
                 
-                // ENHANCED: Background with tier influence
+                // ENHANCED: Draw mystical auras for T6-T7 fighters
+                if (fighter.Alive && tierLevel >= 6)
+                {
+                    DrawMysticalAura(rect, tierLevel, tierColor);
+                }
+                
+                // ENHANCED: Background with tier influence and enhanced glow
                 var bgColor = fighter.Alive ? teamColor : Color.gray;
                 bgColor.a = fighter.Alive ? 0.9f : 0.6f;
                 
-                // High-tier fighters get subtle glow effect
+                // Enhanced glow system for high-tier fighters
                 if (fighter.Alive && tierLevel >= 5)
                 {
-                    var glowRect = rect.ExpandedBy(2f);
-                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, 0.3f);
-                    GUI.DrawTexture(glowRect, BaseContent.WhiteTex);
+                    DrawEnhancedGlow(rect, tierLevel, tierColor);
                 }
                 
                 var oldColor = GUI.color;
@@ -756,17 +801,32 @@ namespace SolWorldMod
                     Widgets.Label(killRect, fighter.Kills.ToString());
                 }
                 
-                // NEW: Tier indicator in top-left corner
+                // ENHANCED: Enhanced tier indicator with icons and better visibility
                 if (tierLevel > 1)
                 {
-                    var tierRect = new Rect(rect.x + 2f, rect.y + 2f, 16f, 16f);
-                    GUI.color = tierColor;
+                    var tierRect = new Rect(rect.x + 2f, rect.y + 2f, 18f, 18f);
+                    
+                    // Enhanced tier background with better contrast
+                    GUI.color = new Color(0f, 0f, 0f, 0.8f);
                     GUI.DrawTexture(tierRect, BaseContent.WhiteTex);
                     
+                    GUI.color = tierColor;
+                    Widgets.DrawBox(tierRect, 1);
+                    
+                    // Draw tier icon with better visibility
                     GUI.color = Color.white;
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(tierRect, tierIcon);
+                    
+                    // Add tier number in corner for high tiers
+                    if (tierLevel >= 6)
+                    {
+                        var tierNumRect = new Rect(rect.x + 16f, rect.y + 16f, 12f, 12f);
+                        GUI.color = tierColor;
+                        Text.Font = GameFont.Tiny;
+                        Widgets.Label(tierNumRect, tierLevel.ToString());
+                    }
                 }
                 
                 // PRESERVED: Fighter name on larger boxes
@@ -997,6 +1057,129 @@ namespace SolWorldMod
             }
             
             return tierCounts;
+        }
+        
+        // NEW: Draw mystical aura effects for T6-T7 fighters
+        private static void DrawMysticalAura(Rect rect, int tierLevel, Color tierColor)
+        {
+            if (tierLevel < 6) return;
+            
+            var auraColor = tierLevel <= AURA_COLORS.Length ? AURA_COLORS[tierLevel - 1] : Color.clear;
+            if (auraColor == Color.clear) return;
+            
+            // Pulsing aura effect
+            var pulseIntensity = 0.5f + 0.3f * Mathf.Sin(glowPulseTime * 3f);
+            auraColor.a *= pulseIntensity;
+            
+            // Multiple aura layers for depth
+            for (int i = 0; i < 3; i++)
+            {
+                var expansion = 3f + (i * 2f);
+                var auraRect = rect.ExpandedBy(expansion);
+                var layerAlpha = auraColor.a * (0.8f - i * 0.2f);
+                
+                GUI.color = new Color(auraColor.r, auraColor.g, auraColor.b, layerAlpha);
+                GUI.DrawTexture(auraRect, BaseContent.WhiteTex);
+            }
+            
+            // Tier 7 gets additional rotating sparkle effect
+            if (tierLevel == 7)
+            {
+                DrawGodlikeSparkles(rect);
+            }
+        }
+        
+        // NEW: Enhanced glow system for T5+ fighters  
+        private static void DrawEnhancedGlow(Rect rect, int tierLevel, Color tierColor)
+        {
+            if (tierLevel < 5) return;
+            
+            var pulseIntensity = 0.4f + 0.2f * Mathf.Sin(glowPulseTime * 4f);
+            var glowAlpha = pulseIntensity * (tierLevel == 7 ? 0.6f : tierLevel == 6 ? 0.5f : 0.3f);
+            
+            // Multi-layer glow effect
+            for (int i = 0; i < 2; i++)
+            {
+                var expansion = (i == 0) ? 2f : 4f;
+                var layerAlpha = glowAlpha * (i == 0 ? 1f : 0.6f);
+                var glowRect = rect.ExpandedBy(expansion);
+                
+                GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, layerAlpha);
+                GUI.DrawTexture(glowRect, BaseContent.WhiteTex);
+            }
+        }
+        
+        // NEW: Special sparkle effects for Tier 7 Godlike Destroyers
+        private static void DrawGodlikeSparkles(Rect rect)
+        {
+            var sparkleCount = 4;
+            var radius = rect.width * 0.6f;
+            var centerX = rect.center.x;
+            var centerY = rect.center.y;
+            
+            for (int i = 0; i < sparkleCount; i++)
+            {
+                var angle = (auraRotation + i * 90f) * Mathf.Deg2Rad;
+                var sparkleX = centerX + Mathf.Cos(angle) * radius;
+                var sparkleY = centerY + Mathf.Sin(angle) * radius;
+                
+                var sparkleRect = new Rect(sparkleX - 3f, sparkleY - 3f, 6f, 6f);
+                var sparkleAlpha = 0.7f + 0.3f * Mathf.Sin(glowPulseTime * 5f + i);
+                
+                GUI.color = new Color(1f, 1f, 0f, sparkleAlpha); // Golden sparkles
+                GUI.DrawTexture(sparkleRect, BaseContent.WhiteTex);
+                
+                // Draw sparkle symbol
+                GUI.color = Color.white;
+                Text.Font = GameFont.Tiny;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Widgets.Label(sparkleRect, "✦");
+            }
+        }
+        
+        // NEW: Winner celebration aura for high-tier winners
+        private static void DrawWinnerCelebrationAura(Rect rect, int tierLevel, Color tierColor)
+        {
+            if (tierLevel < 6) return;
+            
+            // Winner celebration uses more intense effects
+            var celebrationPulse = 0.6f + 0.4f * Mathf.Sin(glowPulseTime * 2f);
+            var auraColor = tierLevel == 7 ? 
+                new Color(1f, 0.8f, 0f, celebrationPulse) : // Gold for T7
+                new Color(0f, 1f, 1f, celebrationPulse);     // Cyan for T6
+            
+            // Multiple celebration layers
+            for (int i = 0; i < 4; i++)
+            {
+                var expansion = 2f + (i * 1.5f);
+                var auraRect = rect.ExpandedBy(expansion);
+                var layerAlpha = auraColor.a * (1f - i * 0.2f);
+                
+                GUI.color = new Color(auraColor.r, auraColor.g, auraColor.b, layerAlpha);
+                GUI.DrawTexture(auraRect, BaseContent.WhiteTex);
+            }
+            
+            // Winner sparkle burst for T7
+            if (tierLevel == 7)
+            {
+                var burstCount = 6;
+                var burstRadius = rect.width * 0.8f;
+                var centerX = rect.center.x;
+                var centerY = rect.center.y;
+                
+                for (int i = 0; i < burstCount; i++)
+                {
+                    var angle = (glowPulseTime * 50f + i * 60f) * Mathf.Deg2Rad;
+                    var burstX = centerX + Mathf.Cos(angle) * burstRadius;
+                    var burstY = centerY + Mathf.Sin(angle) * burstRadius;
+                    
+                    var burstRect = new Rect(burstX - 2f, burstY - 2f, 4f, 4f);
+                    var burstAlpha = 0.8f + 0.2f * Mathf.Sin(glowPulseTime * 7f + i);
+                    
+                    GUI.color = new Color(1f, 1f, 1f, burstAlpha);
+                    GUI.DrawTexture(burstRect, BaseContent.WhiteTex);
+                }
+            }
         }
     }
 }

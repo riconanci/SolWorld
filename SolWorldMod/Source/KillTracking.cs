@@ -1,10 +1,13 @@
-// solworld/SolWorldMod/Source/KillTracking.cs
+// Simplified KillTracking.cs - Only patches public accessible methods
+// REPLACE your existing KillTracking.cs with this version
+
 using HarmonyLib;
 using Verse;
 using RimWorld;
 using UnityEngine;
 using System.Linq;
 using System;
+using Verse.AI;
 
 namespace SolWorldMod
 {
@@ -75,8 +78,11 @@ namespace SolWorldMod
         {
             try
             {
+                // Comprehensive null checks to prevent the errors you're seeing
+                if (__instance?.pawn == null || __instance.pawn.Destroyed) return false;
+                
                 // Prevent downed arena pawns from trying to path
-                if (__instance?.pawn != null && __instance.pawn.Downed)
+                if (__instance.pawn.Downed)
                 {
                     var arenaComp = __instance.pawn.Map?.GetComponent<MapComponent_SolWorldArena>();
                     if (arenaComp?.IsActive == true && arenaComp.GetPawnTeam(__instance.pawn).HasValue)
@@ -93,8 +99,40 @@ namespace SolWorldMod
             catch (System.Exception ex)
             {
                 Log.Warning("SolWorld: Error in downed pawn job prevention: " + ex.Message);
+                return false; // Skip on error to prevent cascading failures
             }
             return true; // Continue with original method
+        }
+        
+        // SIMPLE FIX: Prevent bullets from impacting destroyed things
+        [HarmonyPrefix]
+        [HarmonyPatch(typeof(Bullet), "Impact")]
+        public static bool Bullet_Impact_Prefix(Bullet __instance, Thing hitThing)
+        {
+            try
+            {
+                // Allow impact if no specific hit thing
+                if (hitThing == null) return true;
+
+                // Check if the hit thing is valid
+                if (hitThing.Destroyed) return false; // Skip impact on destroyed things
+
+                // Special handling for pawn targets
+                if (hitThing is Pawn hitPawn)
+                {
+                    if (hitPawn.Dead || !hitPawn.Spawned)
+                    {
+                        return false; // Skip impact on dead/despawned pawns
+                    }
+                }
+
+                return true; // Continue with original impact
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning($"SolWorld: Bullet impact safety error: {ex.Message}");
+                return false; // Skip impact on error
+            }
         }
 
         // NEW: Handle pawn going down for instant death
