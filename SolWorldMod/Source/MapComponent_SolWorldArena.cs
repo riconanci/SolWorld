@@ -490,6 +490,107 @@ namespace SolWorldMod
             }
         }
         
+        /// <summary>
+        /// Aggressive pawn cleanup to prevent job/combat errors
+        /// Call this method during combat phases to prevent null reference exceptions
+        /// </summary>
+        private void PreventivePawnCleanup()
+        {
+            if (!isActive || currentRoster == null) return;
+            
+            try
+            {
+                var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).Where(p => p != null).ToList();
+                
+                foreach (var pawn in allArenaPawns)
+                {
+                    try
+                    {
+                        // Skip if pawn is already destroyed or invalid
+                        if (pawn.Destroyed || pawn.Map == null || !pawn.Spawned)
+                        {
+                            continue;
+                        }
+                        
+                        // If pawn is dead or downed, clean up their jobs immediately
+                        if (pawn.Dead || pawn.Downed)
+                        {
+                            CleanupPawnJobs(pawn);
+                            continue;
+                        }
+                        
+                        // If pawn has invalid job targets, clean up
+                        if (pawn.jobs?.curJob != null)
+                        {
+                            var job = pawn.jobs.curJob;
+                            
+                            // Check if job target is valid
+                            if (job.targetA.HasThing)
+                            {
+                                var target = job.targetA.Thing;
+                                if (target == null || target.Destroyed || target.Map != pawn.Map)
+                                {
+                                    // Invalid target, end the job
+                                    CleanupPawnJobs(pawn);
+                                    continue;
+                                }
+                            }
+                        }
+                        
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Log.Warning($"SolWorld: Error during pawn cleanup for {pawn?.Name}: {ex.Message}");
+                        // Try to clean up the problematic pawn
+                        try
+                        {
+                            CleanupPawnJobs(pawn);
+                        }
+                        catch (System.Exception)
+                        {
+                            // If cleanup fails, just continue
+                        }
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Log.Error($"SolWorld: Critical error during preventive cleanup: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Safely clean up a pawn's jobs and combat state
+        /// </summary>
+        private void CleanupPawnJobs(Pawn pawn)
+        {
+            if (pawn?.jobs == null) return;
+            
+            try
+            {
+                // End current job
+                if (pawn.jobs.curJob != null)
+                {
+                    pawn.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                }
+                
+                // Clear job queue
+                pawn.jobs.ClearQueuedJobs();
+                
+                // Clear combat targets
+                if (pawn.mindState != null)
+                {
+                    pawn.mindState.enemyTarget = null;
+                    pawn.mindState.lastEngageTargetTick = 0;
+                }
+                
+            }
+            catch (System.Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to cleanup jobs for {pawn.Name}: {ex.Message}");
+            }
+        }
+
         private void DrawCustomArenaNames()
         {
             var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).Where(p => p?.Spawned == true).ToList();

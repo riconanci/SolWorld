@@ -1,13 +1,10 @@
-// Simplified KillTracking.cs - Only patches public accessible methods
-// REPLACE your existing KillTracking.cs with this version
-
+// solworld/SolWorldMod/Source/KillTracking.cs
 using HarmonyLib;
 using Verse;
 using RimWorld;
 using UnityEngine;
 using System.Linq;
 using System;
-using Verse.AI;
 
 namespace SolWorldMod
 {
@@ -25,6 +22,10 @@ namespace SolWorldMod
         {
             try
             {
+                // SIMPLE NULL CHECK - Skip if pawn is invalid
+                if (__instance?.Map == null || __instance.Destroyed)
+                    return;
+                    
                 HandlePawnDeath(__instance, dinfo);
             }
             catch (System.Exception ex)
@@ -40,11 +41,11 @@ namespace SolWorldMod
         {
             try
             {
-                // Only handle if pawn actually died from this damage
-                if (__instance.Dead)
-                {
-                    HandlePawnDeath(__instance, dinfo);
-                }
+                // SIMPLE NULL CHECKS - Skip if pawn is invalid
+                if (__instance?.Map == null || __instance.Destroyed || !__instance.Dead)
+                    return;
+                    
+                HandlePawnDeath(__instance, dinfo);
             }
             catch (System.Exception ex)
             {
@@ -59,8 +60,11 @@ namespace SolWorldMod
         {
             try
             {
-                // Only trigger when pawn just became downed
-                if (__result && __instance.Spawned)
+                // SIMPLE NULL CHECKS - Skip if pawn is invalid
+                if (!__result || __instance?.Map == null || __instance.Destroyed || __instance.Dead)
+                    return;
+                    
+                if (__instance.Spawned)
                 {
                     HandlePawnDown(__instance);
                 }
@@ -71,26 +75,34 @@ namespace SolWorldMod
             }
         }
 
-        // PREVENT DOWNED PAWN PATHFINDING ERRORS
+        // PREVENT DOWNED PAWN PATHFINDING ERRORS - SIMPLIFIED
         [HarmonyPrefix]
         [HarmonyPatch(typeof(Verse.AI.JobDriver), "DriverTick")]
         public static bool JobDriver_DriverTick_Prefix(Verse.AI.JobDriver __instance)
         {
             try
             {
-                // Comprehensive null checks to prevent the errors you're seeing
-                if (__instance?.pawn == null || __instance.pawn.Destroyed) return false;
+                // COMPREHENSIVE NULL CHECKS
+                if (__instance?.pawn == null || __instance.pawn.Map == null || __instance.pawn.Destroyed)
+                    return false; // Skip entirely if pawn is invalid
                 
-                // Prevent downed arena pawns from trying to path
+                // Only process downed pawns in active arenas
                 if (__instance.pawn.Downed)
                 {
-                    var arenaComp = __instance.pawn.Map?.GetComponent<MapComponent_SolWorldArena>();
+                    var arenaComp = __instance.pawn.Map.GetComponent<MapComponent_SolWorldArena>();
                     if (arenaComp?.IsActive == true && arenaComp.GetPawnTeam(__instance.pawn).HasValue)
                     {
-                        // This is a downed arena pawn - end their job to prevent pathing errors
-                        if (__instance.pawn.jobs?.curJob != null)
+                        // This is a downed arena pawn - safely end their job
+                        try
                         {
-                            __instance.pawn.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                            if (__instance.pawn.jobs?.curJob != null)
+                            {
+                                __instance.pawn.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                            }
+                        }
+                        catch (System.Exception)
+                        {
+                            // Ignore job ending errors - pawn might be in weird state
                         }
                         return false; // Skip the original DriverTick
                     }
@@ -99,53 +111,59 @@ namespace SolWorldMod
             catch (System.Exception ex)
             {
                 Log.Warning("SolWorld: Error in downed pawn job prevention: " + ex.Message);
-                return false; // Skip on error to prevent cascading failures
             }
             return true; // Continue with original method
         }
-        
-        // SIMPLE FIX: Prevent bullets from impacting destroyed things
+
+        // ADDITIONAL SAFETY: Prevent null reference errors in AttackMelee job drivers
         [HarmonyPrefix]
-        [HarmonyPatch(typeof(Bullet), "Impact")]
-        public static bool Bullet_Impact_Prefix(Bullet __instance, Thing hitThing)
+        [HarmonyPatch(typeof(Verse.AI.JobDriver_AttackMelee), "TryMakePreToilReservations")]
+        public static bool AttackMelee_TryMakePreToilReservations_Prefix(Verse.AI.JobDriver_AttackMelee __instance, ref bool __result)
         {
             try
             {
-                // Allow impact if no specific hit thing
-                if (hitThing == null) return true;
-
-                // Check if the hit thing is valid
-                if (hitThing.Destroyed) return false; // Skip impact on destroyed things
-
-                // Special handling for pawn targets
-                if (hitThing is Pawn hitPawn)
+                // NULL SAFETY CHECK
+                if (__instance?.pawn == null || __instance.job?.targetA == null)
                 {
-                    if (hitPawn.Dead || !hitPawn.Spawned)
-                    {
-                        return false; // Skip impact on dead/despawned pawns
-                    }
+                    __result = false;
+                    return false; // Skip original method
                 }
-
-                return true; // Continue with original impact
+                
+                // Check if pawn or target is invalid
+                var pawn = __instance.pawn;
+                var target = __instance.job.targetA.Thing as Pawn;
+                
+                if (pawn.Destroyed || pawn.Map == null || target?.Destroyed == true || target?.Map == null)
+                {
+                    __result = false;
+                    return false; // Skip original method
+                }
             }
             catch (System.Exception ex)
             {
-                Log.Warning($"SolWorld: Bullet impact safety error: {ex.Message}");
-                return false; // Skip impact on error
+                Log.Warning("SolWorld: Error in AttackMelee safety check: " + ex.Message);
+                __result = false;
+                return false;
             }
+            
+            return true; // Continue with original method
         }
 
         // NEW: Handle pawn going down for instant death
         private static void HandlePawnDown(Pawn pawn)
         {
-            if (pawn?.Map == null || pawn.Dead) return;
+            // COMPREHENSIVE NULL CHECKS
+            if (pawn?.Map == null || pawn.Dead || pawn.Destroyed) 
+                return;
 
             var arenaComp = pawn.Map.GetComponent<MapComponent_SolWorldArena>();
-            if (arenaComp?.IsActive != true) return;
+            if (arenaComp?.IsActive != true) 
+                return;
 
             // Check if this is an arena fighter
             var teamColor = arenaComp.GetPawnTeam(pawn);
-            if (!teamColor.HasValue) return;
+            if (!teamColor.HasValue) 
+                return;
 
             // Prevent double-processing
             var currentTick = Find.TickManager.TicksGame;
@@ -164,38 +182,45 @@ namespace SolWorldMod
                 999f, // High armor penetration
                 -1f,  // Random angle
                 null, // No specific instigator
-                pawn.health.hediffSet.GetBrain() // Target brain for instant death
+                pawn.health?.hediffSet?.GetBrain() // Target brain for instant death - NULL SAFE
             );
 
             // Kill the pawn immediately
             pawn.Kill(executionDamage);
 
-            // Add dramatic visual effects (FIXED - using correct RimWorld 1.6 API)
-            if (pawn.Spawned)
+            // Add dramatic visual effects - NULL SAFE
+            if (pawn.Spawned && pawn.Map != null)
             {
-                // Blood splatter effect - FIXED method call
-                FleckMaker.ThrowDustPuffThick(pawn.Position.ToVector3Shifted(), pawn.Map, 2.5f, Color.red);
-                
-                // Additional blood spatter
-                for (int i = 0; i < 3; i++)
+                try
                 {
-                    var randomOffset = new Vector3(
-                        UnityEngine.Random.Range(-1f, 1f),
-                        0f,
-                        UnityEngine.Random.Range(-1f, 1f)
-                    );
+                    // Blood splatter effect
+                    FleckMaker.ThrowDustPuffThick(pawn.Position.ToVector3Shifted(), pawn.Map, 2.5f, Color.red);
                     
-                    FleckMaker.ThrowDustPuff(
-                        pawn.Position.ToVector3Shifted() + randomOffset,
-                        pawn.Map,
-                        1f
-                    );
-                }
+                    // Additional blood spatter
+                    for (int i = 0; i < 3; i++)
+                    {
+                        var randomOffset = new Vector3(
+                            UnityEngine.Random.Range(-1f, 1f),
+                            0f,
+                            UnityEngine.Random.Range(-1f, 1f)
+                        );
+                        
+                        FleckMaker.ThrowDustPuff(
+                            pawn.Position.ToVector3Shifted() + randomOffset,
+                            pawn.Map,
+                            1f
+                        );
+                    }
 
-                // Dev mode elimination text
-                if (Prefs.DevMode)
+                    // Dev mode elimination text
+                    if (Prefs.DevMode)
+                    {
+                        MoteMaker.ThrowText(pawn.Position.ToVector3Shifted(), pawn.Map, "ELIMINATED!", Color.red, 3f);
+                    }
+                }
+                catch (System.Exception ex)
                 {
-                    MoteMaker.ThrowText(pawn.Position.ToVector3Shifted(), pawn.Map, "ELIMINATED!", Color.red, 3f);
+                    Log.Warning("SolWorld: Error creating visual effects: " + ex.Message);
                 }
             }
 
@@ -207,10 +232,11 @@ namespace SolWorldMod
             lastDownTick.Remove(pawn);
         }
 
-        // MAIN DEATH HANDLER
+        // MAIN DEATH HANDLER - SIMPLIFIED AND NULL SAFE
         private static void HandlePawnDeath(Pawn victim, DamageInfo? dinfo)
         {
-            if (victim?.Map == null)
+            // COMPREHENSIVE NULL CHECKS
+            if (victim?.Map == null || victim.Destroyed)
                 return;
 
             var arenaComp = victim.Map.GetComponent<MapComponent_SolWorldArena>();
@@ -223,11 +249,11 @@ namespace SolWorldMod
 
             Log.Message($"SolWorld: Processing death of {victim.Name?.ToStringShort ?? "Unknown"}");
 
-            // Find the victim in our roster
+            // Find the victim in our roster - NULL SAFE
             var victimFighter = FindFighterByPawn(roster, victim);
             if (victimFighter == null)
             {
-                Log.Warning("SolWorld: Dead pawn not found in roster: " + victim.Name);
+                Log.Warning("SolWorld: Dead pawn not found in roster: " + (victim.Name?.ToStringShort ?? "Unknown"));
                 return;
             }
 
@@ -235,9 +261,9 @@ namespace SolWorldMod
             victimFighter.Alive = false;
             Log.Message($"SolWorld: {victimFighter.Team} fighter {victimFighter.WalletShort} eliminated");
 
-            // Try to find the killer and attribute the kill
+            // Try to find the killer and attribute the kill - NULL SAFE
             var killer = FindKiller(victim, dinfo);
-            if (killer != null)
+            if (killer?.Map != null && !killer.Destroyed)
             {
                 var killerFighter = FindFighterByPawn(roster, killer);
                 if (killerFighter != null && killerFighter.Team != victimFighter.Team)
@@ -245,10 +271,17 @@ namespace SolWorldMod
                     killerFighter.Kills++;
                     Log.Message($"SolWorld: Kill attributed - {killerFighter.WalletShort} ({killerFighter.Team}) killed {victimFighter.WalletShort} ({victimFighter.Team})");
                     
-                    // Add kill effect
-                    if (killer.Spawned)
+                    // Add kill effect - NULL SAFE
+                    if (killer.Spawned && killer.Map != null)
                     {
-                        MoteMaker.ThrowText(killer.Position.ToVector3Shifted(), killer.Map, "+1 KILL", Color.yellow, 2f);
+                        try
+                        {
+                            MoteMaker.ThrowText(killer.Position.ToVector3Shifted(), killer.Map, "+1 KILL", Color.yellow, 2f);
+                        }
+                        catch (System.Exception ex)
+                        {
+                            Log.Warning("SolWorld: Error creating kill text: " + ex.Message);
+                        }
                     }
                 }
                 else if (killerFighter != null)
@@ -261,150 +294,83 @@ namespace SolWorldMod
                 Log.Message($"SolWorld: Death with unknown cause - {victimFighter.WalletShort} eliminated");
             }
 
-            // Check if this death ends the round
-            CheckForRoundEnd(arenaComp);
+            // NOTE: Round end checking removed - MapComponent handles this automatically via UpdateRosterStatus()
+            // The arena component already checks team elimination every 30 ticks during combat
 
             // Clean up any tracking for this pawn
             lastDownTick.Remove(victim);
         }
 
-        // KILLER IDENTIFICATION (FIXED - removed invalid properties)
+        // KILLER IDENTIFICATION - SIMPLIFIED VERSION (FIXED)
         private static Pawn FindKiller(Pawn victim, DamageInfo? dinfo)
         {
-            if (!dinfo.HasValue)
-                return null;
-
-            var damageInfo = dinfo.Value;
-
-            // Direct instigator (ranged weapons, direct melee)
-            if (damageInfo.Instigator is Pawn directKiller)
+            try
             {
-                return directKiller;
-            }
-
-            // Weapon-based killing - try to find weapon owner
-            if (damageInfo.Weapon != null)
-            {
-                var weaponOwner = TryFindWeaponOwner(victim, damageInfo.Weapon);
-                if (weaponOwner != null)
+                // Check DamageInfo instigator first - NULL SAFE
+                if (dinfo?.Instigator is Pawn directKiller && !directKiller.Destroyed && directKiller.Map != null)
                 {
-                    return weaponOwner;
+                    return directKiller;
+                }
+
+                // REMOVED: Battle log access - causes compilation errors in RimWorld 1.6
+                // Instead, use simpler nearby hostile detection
+
+                // Fallback: Look for nearby hostiles - NULL SAFE
+                if (victim?.Map != null)
+                {
+                    var nearbyPawns = GenRadial.RadialDistinctThingsAround(victim.Position, victim.Map, 5f, true)
+                        ?.OfType<Pawn>()
+                        ?.Where(p => p != null && !p.Destroyed && p.Map != null && p != victim && p.Spawned);
+
+                    if (nearbyPawns != null)
+                    {
+                        foreach (var pawn in nearbyPawns)
+                        {
+                            try
+                            {
+                                if (pawn.mindState?.enemyTarget == victim || 
+                                    pawn.CurJob?.targetA.Thing == victim)
+                                {
+                                    return pawn;
+                                }
+                            }
+                            catch (System.Exception)
+                            {
+                                // Ignore individual pawn check errors
+                                continue;
+                            }
+                        }
+                    }
                 }
             }
-
-            // Check for nearby arena pawns as potential killers
-            var arenaComp = victim.Map?.GetComponent<MapComponent_SolWorldArena>();
-            if (arenaComp?.IsActive == true)
+            catch (System.Exception ex)
             {
-                var allArenaPawns = arenaComp.GetAllArenaPawns();
-                var nearbyPawns = allArenaPawns.Where(p => 
-                    p?.Spawned == true && 
-                    p != victim &&
-                    p.Position.DistanceTo(victim.Position) < 5
-                );
-
-                // Return the closest hostile pawn
-                var hostilePawns = nearbyPawns.Where(p => {
-                    var pawnTeam = arenaComp.GetPawnTeam(p);
-                    var victimTeam = arenaComp.GetPawnTeam(victim);
-                    return pawnTeam.HasValue && victimTeam.HasValue && pawnTeam != victimTeam;
-                });
-
-                return hostilePawns.OrderBy(p => p.Position.DistanceTo(victim.Position)).FirstOrDefault();
+                Log.Warning("SolWorld: Error finding killer: " + ex.Message);
             }
 
             return null;
         }
 
-        // FIGHTER LOOKUP UTILITIES
+        // NULL SAFE fighter finder
         private static Fighter FindFighterByPawn(RoundRoster roster, Pawn pawn)
         {
-            if (roster == null || pawn == null)
+            if (roster?.Red == null || roster.Blue == null || pawn == null)
                 return null;
 
-            return roster.Red.FirstOrDefault(f => f.PawnRef == pawn) ??
-                   roster.Blue.FirstOrDefault(f => f.PawnRef == pawn);
-        }
-
-        private static Pawn TryFindWeaponOwner(Pawn victim, ThingDef weaponDef)
-        {
-            if (victim?.Map == null)
-                return null;
-
-            // Look for arena pawns near the victim who have this weapon equipped
-            var arenaComp = victim.Map.GetComponent<MapComponent_SolWorldArena>();
-            if (arenaComp?.IsActive != true)
-                return null;
-
-            var allArenaPawns = arenaComp.GetAllArenaPawns();
-            var nearbyArenaPawns = allArenaPawns.Where(p => 
-                p?.Spawned == true && 
-                p != victim &&
-                p.Position.DistanceTo(victim.Position) < 25 &&
-                p.equipment?.Primary?.def == weaponDef
-            );
-
-            return nearbyArenaPawns.FirstOrDefault();
-        }
-
-        // ROUND END DETECTION
-        private static void CheckForRoundEnd(MapComponent_SolWorldArena arenaComp)
-        {
-            if (arenaComp.CurrentState != ArenaState.Combat)
-                return;
-
-            var roster = arenaComp.CurrentRoster;
-            if (roster == null)
-                return;
-
-            // Check for team elimination
-            if (roster.RedAlive == 0 || roster.BlueAlive == 0)
+            try
             {
-                Log.Message($"SolWorld: Team elimination detected - Red: {roster.RedAlive}/10, Blue: {roster.BlueAlive}/10");
-                
-                // Determine winner
-                if (roster.RedAlive > 0)
-                {
-                    Log.Message("SolWorld: RED TEAM WINS by elimination!");
-                }
-                else if (roster.BlueAlive > 0)
-                {
-                    Log.Message("SolWorld: BLUE TEAM WINS by elimination!");
-                }
-                else
-                {
-                    Log.Message("SolWorld: MUTUAL ELIMINATION - both teams eliminated!");
-                }
+                var redFighter = roster.Red.FirstOrDefault(f => f?.PawnRef == pawn);
+                if (redFighter != null) return redFighter;
+
+                var blueFighter = roster.Blue.FirstOrDefault(f => f?.PawnRef == pawn);
+                if (blueFighter != null) return blueFighter;
             }
-            else
+            catch (System.Exception ex)
             {
-                Log.Message($"SolWorld: Combat continues - Red: {roster.RedAlive}/10, Blue: {roster.BlueAlive}/10");
+                Log.Warning("SolWorld: Error finding fighter by pawn: " + ex.Message);
             }
-        }
 
-        // MANUAL KILL ATTRIBUTION (utility method)
-        public static void AttributeKill(RoundRoster roster, Pawn killer, Pawn victim)
-        {
-            if (roster?.IsLive != true)
-                return;
-
-            var killerFighter = FindFighterByPawn(roster, killer);
-            var victimFighter = FindFighterByPawn(roster, victim);
-
-            if (killerFighter != null && victimFighter != null && 
-                killerFighter.Team != victimFighter.Team)
-            {
-                killerFighter.Kills++;
-                victimFighter.Alive = false;
-                Log.Message($"SolWorld: Manual kill attribution - {killerFighter.WalletShort} killed {victimFighter.WalletShort}");
-            }
-        }
-
-        // CLEANUP METHOD (called when arena stops)
-        public static void CleanupTracking()
-        {
-            lastDownTick.Clear();
-            Log.Message("SolWorld: Kill tracking cleanup completed");
+            return null;
         }
     }
 }
