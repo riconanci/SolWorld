@@ -156,61 +156,16 @@ export class SolanaService {
 
   /**
    * Generate mock holders for testing when real data is unavailable
-   * NOW WITH PROPER TIER DISTRIBUTION!
    */
   generateMockHolders(count: number = 50): TokenHolder[] {
-    console.log(`🧪 Generating ${count} TIERED mock token holders for testing...`);
-    
-    // Define tier ranges based on the tier system
-    const tierRanges = [
-      { tier: 1, min: 50000, max: 99999, weight: 8 },      // Basic
-      { tier: 2, min: 100000, max: 249999, weight: 5 },    // Armored  
-      { tier: 3, min: 250000, max: 499999, weight: 3 },    // Elite
-      { tier: 4, min: 500000, max: 749999, weight: 2 },    // Specialist
-      { tier: 5, min: 750000, max: 999999, weight: 1 },    // Champion
-      { tier: 6, min: 1000000, max: 1499999, weight: 1 },  // Warlord
-      { tier: 7, min: 1500000, max: 5000000, weight: 1 }   // God
-    ];
-
-    // Calculate total weight for distribution
-    const totalWeight = tierRanges.reduce((sum, tier) => sum + tier.weight, 0);
+    console.log(`🧪 Generating ${count} mock token holders for testing...`);
     
     const mockHolders: TokenHolder[] = [];
-    let holdersCreated = 0;
-
-    // Create holders for each tier based on weight distribution
-    for (const tierRange of tierRanges) {
-      // Calculate how many holders this tier should get
-      const tierCount = Math.floor((tierRange.weight / totalWeight) * count);
-      
-      console.log(`🎯 Creating ${tierCount} Tier ${tierRange.tier} holders (${tierRange.min.toLocaleString()}-${tierRange.max.toLocaleString()} tokens)`);
-
-      for (let i = 0; i < tierCount && holdersCreated < count; i++) {
-        // Generate realistic Solana addresses (44 characters, base58)
-        const wallet = this.generateMockAddress();
-        
-        // Generate balance within tier range
-        const balance = Math.floor(
-          Math.random() * (tierRange.max - tierRange.min) + tierRange.min
-        );
-        
-        mockHolders.push({
-          wallet,
-          balance,
-          balanceFormatted: balance.toLocaleString(undefined, {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 6
-          })
-        });
-        
-        holdersCreated++;
-      }
-    }
-
-    // Fill any remaining spots with Tier 1 fighters
-    while (mockHolders.length < count) {
+    
+    for (let i = 0; i < count; i++) {
+      // Generate realistic Solana addresses (44 characters, base58)
       const wallet = this.generateMockAddress();
-      const balance = Math.floor(Math.random() * 49999 + 50000); // Tier 1 range
+      const balance = Math.random() * 1000 + config.MIN_HOLDER_BALANCE;
       
       mockHolders.push({
         wallet,
@@ -222,54 +177,79 @@ export class SolanaService {
       });
     }
 
-    // Sort by balance descending (highest tiers first)
+    // Sort by balance descending
     mockHolders.sort((a, b) => b.balance - a.balance);
     
-    // Log the tier distribution we created
-    console.log(`✅ Generated ${mockHolders.length} tiered mock holders:`);
-    const tierCounts: { [key: number]: number } = {};
-    
-    mockHolders.forEach(holder => {
-      const tier = this.getTierFromBalance(holder.balance);
-      tierCounts[tier] = (tierCounts[tier] || 0) + 1;
-    });
-    
-    Object.entries(tierCounts).forEach(([tier, count]) => {
-      console.log(`   Tier ${tier}: ${count} holders`);
-    });
-    
-    console.log(`   Highest: ${mockHolders[0].balanceFormatted} tokens (Tier ${this.getTierFromBalance(mockHolders[0].balance)})`);
-    console.log(`   Lowest: ${mockHolders[mockHolders.length - 1].balanceFormatted} tokens (Tier ${this.getTierFromBalance(mockHolders[mockHolders.length - 1].balance)})`);
-    
+    console.log(`✅ Generated ${mockHolders.length} mock holders`);
     return mockHolders;
-  }
-
-  /**
-   * Helper method to determine tier from balance
-   */
-  private getTierFromBalance(balance: number): number {
-    if (balance >= 1500000) return 7; // God
-    if (balance >= 1000000) return 6; // Warlord
-    if (balance >= 750000) return 5;  // Champion
-    if (balance >= 500000) return 4;  // Specialist
-    if (balance >= 250000) return 3;  // Elite
-    if (balance >= 100000) return 2;  // Armored
-    return 1; // Basic
   }
 
   /**
    * Generate a realistic mock Solana address
    */
   private generateMockAddress(): string {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789';
-    let result = '';
+    // Base58 alphabet
+    const base58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    let address = '';
     
-    // Generate 44 character base58 string (standard Solana address length)
+    // Solana addresses are typically 44 characters
     for (let i = 0; i < 44; i++) {
-      result += chars[Math.floor(Math.random() * chars.length)];
+      address += base58[Math.floor(Math.random() * base58.length)];
     }
     
-    return result;
+    return address;
+  }
+
+  /**
+   * Validate if a string is a valid Solana address
+   */
+  isValidSolanaAddress(address: string): boolean {
+    try {
+      new PublicKey(address);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get connection for other services to use
+   */
+  getConnection(): Connection {
+    return this.connection;
+  }
+
+  /**
+   * Get token mint address
+   */
+  getTokenMint(): PublicKey {
+    return this.tokenMint;
+  }
+
+  /**
+   * Check if connection is healthy
+   */
+  async checkConnection(): Promise<boolean> {
+    try {
+      const version = await this.connection.getVersion();
+      console.log('Solana connection healthy:', version);
+      return true;
+    } catch (error) {
+      console.error('Solana connection failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get current slot for debugging
+   */
+  async getCurrentSlot(): Promise<number> {
+    try {
+      return await this.connection.getSlot();
+    } catch (error) {
+      console.error('Failed to get current slot:', error);
+      return 0;
+    }
   }
 }
 

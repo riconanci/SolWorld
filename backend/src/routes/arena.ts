@@ -45,6 +45,9 @@ router.get('/holders', async (req: Request, res: Response) => {
     console.log('📡 Received holders request from RimWorld mod');
     
     const result = await holdersService.getRandomHolders();
+    console.log('🔍 ARENA DEBUG: result.fighters =', result.fighters?.length || 'undefined', 'fighters');
+    console.log('🔍 ARENA DEBUG: result.stats.tierDistribution =', result.stats.tierDistribution || 'undefined');
+    console.log('🔍 ARENA DEBUG: result keys =', Object.keys(result));
     
     // Enhanced logging with tier information
     console.log(`✅ Returning ${result.wallets.length} tiered fighters (${result.source})`);

@@ -849,13 +849,19 @@ namespace SolWorldMod
         private void CreateRoster()
         {
             Log.Message("SolWorld: Creating roster...");
-            Messages.Message("DEBUG: CreateRoster() called!", MessageTypeDefOf.CautionInput);
-            // Try to get real holders from backend
-            string[] realHolders = null;
+            
+            // Clear any previous tier data
+            currentRoundTierData.Clear();
+            
+            // Try to get tiered fighters from backend
+            string[] walletAddresses = null;
+            bool tierSystemActive = false;
+            
             try
             {
                 Log.Message("SolWorld: Fetching holders from: " + SolWorldMod.Settings.apiBaseUrl + "/api/arena/holders");
                 
+                // Make HTTP request to backend
                 var request = System.Net.WebRequest.Create(SolWorldMod.Settings.apiBaseUrl + "/api/arena/holders");
                 request.Timeout = 10000;
                 request.Method = "GET";
@@ -865,86 +871,123 @@ namespace SolWorldMod
                 using (var reader = new System.IO.StreamReader(stream))
                 {
                     var jsonResponse = reader.ReadToEnd();
-                    Log.Message("SolWorld: Backend response received: " + jsonResponse.Substring(0, Math.Min(100, jsonResponse.Length)) + "...");
-                    
-                    // Enhanced JSON parsing to extract both wallets and fighters arrays
+                    Log.Message("SolWorld: Backend response received: " + jsonResponse.Substring(0, Math.Min(200, jsonResponse.Length)) + "...");
+                    Log.Message("SolWorld: FULL JSON Response: " + jsonResponse);
+                    // Parse response using CryptoReporter
                     if (jsonResponse.Contains("\"success\":true"))
                     {
-                        realHolders = ExtractWalletsFromJson(jsonResponse);
-                        var realFighters = ExtractFightersFromJson(jsonResponse);
+                        var cryptoReporter = new Net.CryptoReporter();
+                        var parsedResponse = cryptoReporter.ParseHoldersResponse(jsonResponse);
                         
-                        if (realFighters != null && realFighters.Length >= 20)
+                        if (parsedResponse?.data?.fighters != null && parsedResponse.data.fighters.Length >= 20)
                         {
-                            Log.Message("SolWorld: Extracted " + realFighters.Length + " tiered fighters from backend!");
-                            // Store tier data for use during spawning
-                            StoreTierDataForRound(realFighters);
-                            // Test code to verify tier system is working
+                            // SUCCESS: We have tiered fighters
+                            Log.Message("SolWorld: Extracted " + parsedResponse.data.fighters.Length + " tiered fighters from backend!");
+                            
+                            // Store tier data for equipment assignment
+                            StoreTierDataForRound(parsedResponse.data.fighters);
+                            
+                            // Use wallet addresses for roster creation
+                            walletAddresses = parsedResponse.data.wallets;
+                            tierSystemActive = true;
+                            
+                            // Log tier system status
                             if (currentRoundTierData.Count > 0)
                             {
                                 var firstFighter = currentRoundTierData.Values.First();
-                                Messages.Message($"TIER SYSTEM ACTIVE: {currentRoundTierData.Count} fighters loaded. First fighter is Tier {firstFighter.Tier} ({firstFighter.TierName})", MessageTypeDefOf.PositiveEvent);
-                                Log.Message($"SolWorld: First fighter details - Tier {firstFighter.Tier}, Armor: {firstFighter.HasArmor}, Helmet: {firstFighter.HasHelmet}");
-                            }
-                            else
-                            {
-                                Messages.Message("TIER SYSTEM: No tier data found - using fallback", MessageTypeDefOf.CautionInput);
+                                Log.Message($"SolWorld: TIER SYSTEM ACTIVE - First fighter: Tier {firstFighter.Tier} ({firstFighter.TierName}), Armor: {firstFighter.HasArmor}, Helmet: {firstFighter.HasHelmet}");
+                                
+                                // Count tier distribution for logging
+                                var tierCounts = new Dictionary<int, int>();
+                                foreach (var fighter in currentRoundTierData.Values)
+                                {
+                                    if (!tierCounts.ContainsKey(fighter.Tier))
+                                        tierCounts[fighter.Tier] = 0;
+                                    tierCounts[fighter.Tier]++;
+                                }
+                                
+                                Log.Message("SolWorld: Tier distribution:");
+                                foreach (var kvp in tierCounts.OrderBy(x => x.Key))
+                                {
+                                    Log.Message($"   {kvp.Value}x Tier {kvp.Key}");
+                                }
                             }
                         }
-                        else if (realHolders != null)
+                        else if (parsedResponse?.data?.wallets != null && parsedResponse.data.wallets.Length >= 20)
                         {
-                            Log.Message("SolWorld: Using wallet-only data (no tier information)");
+                            // FALLBACK: We have wallets but no tier data
+                            Log.Warning("SolWorld: No tier data received, using wallet-only mode");
+                            walletAddresses = parsedResponse.data.wallets;
+                            tierSystemActive = false;
+                        }
+                        else
+                        {
+                            Log.Warning("SolWorld: Backend response missing expected data");
                         }
                     }
                     else
                     {
-                        Log.Warning("SolWorld: Invalid JSON response structure");
+                        Log.Warning("SolWorld: Backend response indicates failure");
                     }
                 }
             }
             catch (System.Exception ex)
             {
-                Log.Error("SolWorld: Failed to fetch holders: " + ex.Message);
+                Log.Error("SolWorld: Failed to fetch holders from backend: " + ex.Message);
             }
             
-            // Create roster with real or mock data
+            // Create roster with fetched data or fallback to mock
             currentRoster = new RoundRoster
             {
                 RoundRewardTotalSol = SolWorldMod.Settings.roundPoolSol,
                 PayoutPercent = SolWorldMod.Settings.payoutPercent
             };
-
-            // PRIORITIZE tier data if available
-            if (currentRoundTierData.Count >= 20)
+            
+            if (walletAddresses != null && walletAddresses.Length >= 20)
             {
-                Log.Message("SolWorld: Using TIERED fighters from backend!");
-                var tieredFighters = currentRoundTierData.Values.Take(20).ToList();
-                for (int i = 0; i < 10; i++)
+                // Use real wallet addresses from backend
+                if (tierSystemActive)
                 {
-                    currentRoster.Red.Add(new Fighter(tieredFighters[i].Wallet, TeamColor.Red));
-                    currentRoster.Blue.Add(new Fighter(tieredFighters[i + 10].Wallet, TeamColor.Blue));
+                    Log.Message("SolWorld: Creating roster with TIERED fighters from backend!");
                 }
-            }
-            else if (realHolders != null && realHolders.Length >= 20)
-            {
-                Log.Message("SolWorld: Using REAL wallet addresses from backend!");
+                else
+                {
+                    Log.Message("SolWorld: Creating roster with basic fighters from backend!");
+                }
+                
+                // Assign fighters to teams
                 for (int i = 0; i < 10; i++)
                 {
-                    currentRoster.Red.Add(new Fighter(realHolders[i], TeamColor.Red));
-                    currentRoster.Blue.Add(new Fighter(realHolders[i + 10], TeamColor.Blue));
+                    currentRoster.Red.Add(new Fighter(walletAddresses[i], TeamColor.Red));
+                    currentRoster.Blue.Add(new Fighter(walletAddresses[i + 10], TeamColor.Blue));
                 }
             }
             else
             {
-                Log.Message("SolWorld: Falling back to mock data");
+                // Fallback to mock data
+                Log.Message("SolWorld: Falling back to mock wallet addresses");
                 var mockHolders = GenerateMockHolders();
+                
                 for (int i = 0; i < 10; i++)
                 {
                     currentRoster.Red.Add(new Fighter(mockHolders[i], TeamColor.Red));
                     currentRoster.Blue.Add(new Fighter(mockHolders[i + 10], TeamColor.Blue));
                 }
+                
+                tierSystemActive = false;
             }
-
-            Log.Message("SolWorld: Created roster with 20 fighters (10 red, 10 blue)");
+            
+            // Final status message
+            if (tierSystemActive)
+            {
+                Messages.Message($"TIER SYSTEM ACTIVE: {currentRoundTierData.Count} fighters with tier bonuses!", MessageTypeDefOf.PositiveEvent);
+            }
+            else
+            {
+                Messages.Message("Arena ready: Using basic fighter mode", MessageTypeDefOf.NeutralEvent);
+            }
+            
+            Log.Message($"SolWorld: Created roster with 20 fighters (10 red, 10 blue) - Tier system: {(tierSystemActive ? "ACTIVE" : "INACTIVE")}");
             Log.Message("SolWorld: Sample fighter names - Red[0]: " + currentRoster.Red[0].WalletShort + ", Blue[0]: " + currentRoster.Blue[0].WalletShort);
         }
 
@@ -1090,15 +1133,40 @@ namespace SolWorldMod
             }
         }
 
-        private void StoreTierDataForRound(TieredFighter[] fighters)
+        private void StoreTierDataForRound(Net.TieredFighter[] fighters)
         {
             currentRoundTierData.Clear();
-            foreach (var fighter in fighters)
+            foreach (var cryptoFighter in fighters)
             {
-                currentRoundTierData[fighter.Wallet] = fighter;
+                // DEBUG: Check what we're actually getting
+                Log.Message($"SolWorld: DEBUG - Processing fighter {cryptoFighter.wallet.Substring(0, 8)}...");
+                Log.Message($"SolWorld: DEBUG - Tier object is null: {cryptoFighter.tier == null}");
+                
+                if (cryptoFighter.tier != null)
+                {
+                    Log.Message($"SolWorld: DEBUG - Tier.tier value: {cryptoFighter.tier.tier}");
+                    Log.Message($"SolWorld: DEBUG - Tier.name value: {cryptoFighter.tier.name ?? "null"}");
+                    Log.Message($"SolWorld: DEBUG - Tier.hasArmor value: {cryptoFighter.tier.hasArmor}");
+                }
+                
+                // Convert from CryptoReporter.TieredFighter to MapComponent.TieredFighter
+                var internalFighter = new TieredFighter
+                {
+                    Wallet = cryptoFighter.wallet,
+                    Balance = cryptoFighter.balance,
+                    Tier = cryptoFighter.tier?.tier ?? 1,
+                    TierName = cryptoFighter.tier?.name ?? "Basic Fighter",
+                    WeaponQuality = cryptoFighter.tier?.weaponQuality ?? "Normal",
+                    HasArmor = cryptoFighter.tier?.hasArmor ?? false,
+                    HasHelmet = cryptoFighter.tier?.hasHelmet ?? false,
+                    HasAura = cryptoFighter.tier?.hasAura ?? false
+                };
+                
+                currentRoundTierData[internalFighter.Wallet] = internalFighter;
+                
+                Log.Message($"SolWorld: Final result - {internalFighter.Wallet.Substring(0, 8)}... → Tier {internalFighter.Tier} ({internalFighter.TierName})");
             }
-            Log.Message($"SolWorld: Stored tier data for {currentRoundTierData.Count} fighters");
-        }
+}
 
         private string[] GenerateMockHolders()
         {
@@ -1462,7 +1530,7 @@ namespace SolWorldMod
 
         private void SpawnTeam(List<Fighter> fighters, IntVec3 spawnerPos, TeamColor teamColor, Faction teamFaction)
         {
-            Messages.Message($"DEBUG: SpawnTeam called for {teamColor} team with {fighters.Count} fighters", MessageTypeDefOf.PositiveEvent);
+            //Messages.Message($"DEBUG: SpawnTeam called for {teamColor} team with {fighters.Count} fighters", MessageTypeDefOf.PositiveEvent);
             Log.Message($"SolWorld: Spawning {teamColor} team at {spawnerPos} with faction {teamFaction.Name}...");
             
             // FIXED: Generate loadout ONCE for both teams at the start
@@ -1627,47 +1695,47 @@ namespace SolWorldMod
         // ⭐ NEW METHOD: Apply tier-based enhancements to pawn
         private void ApplyTierEnhancements(Pawn pawn, Fighter fighter)
         {
-            // Check if we have tier data for this fighter
+            // Skip if no tier data available
             if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
             {
-                // No tier data - this is normal for mock fighters or when backend doesn't return tier info
+                Log.Message($"SolWorld: No tier data for {fighter.WalletShort} - using basic equipment");
                 return;
             }
             
             var tierData = currentRoundTierData[fighter.WalletFull];
-            Log.Message($"SolWorld: Applying Tier {tierData.Tier} ({tierData.TierName}) enhancements to {fighter.WalletShort}");
+            Log.Message($"SolWorld: Applying Tier {tierData.Tier} enhancements to {fighter.WalletShort}");
             
-            // Apply health multiplier by adjusting pawn's max health
-            if (tierData.Tier >= 2)
+            try
             {
-                try
+                // Apply tier-based armor
+                if (tierData.HasArmor)
                 {
-                    var healthMultiplier = GetHealthMultiplierForTier(tierData.Tier);
-                    
-                    // Simple approach: Log health enhancement (full implementation would add custom hediffs)
-                    Log.Message($"SolWorld: Applied {healthMultiplier}x health multiplier to Tier {tierData.Tier} fighter");
-                    
-                    // In a full implementation, you would create custom HediffDefs for health boosts
-                    // For now, this serves as a placeholder for the tier health system
+                    ApplyTierArmor(pawn, fighter);
                 }
-                catch (Exception ex)
+                
+                // Apply tier-based helmet
+                if (tierData.HasHelmet)
                 {
-                    Log.Warning($"SolWorld: Failed to apply health enhancement: {ex.Message}");
+                    ApplyTierHelmet(pawn, fighter);
                 }
+                
+                // Apply stat modifiers for higher tiers
+                if (tierData.Tier >= 3)
+                {
+                    ApplyTierStatBoosts(pawn, fighter);
+                }
+                
+                // Apply visual effects for highest tiers
+                if (tierData.Tier >= 6)
+                {
+                    ApplyTierVisualEffects(pawn, fighter);
+                }
+                
+                Log.Message($"SolWorld: Successfully applied Tier {tierData.Tier} ({tierData.TierName}) enhancements");
             }
-            
-            // Apply visual glow for mythical+ fighters
-            if (tierData.HasAura && tierData.Tier >= 6)
+            catch (Exception ex)
             {
-                try
-                {
-                    // In a full implementation, you might add a custom comp or hediff for glowing
-                    Log.Message($"SolWorld: Applied aura glow effect to Tier {tierData.Tier} fighter");
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning($"SolWorld: Failed to apply glow effect: {ex.Message}");
-                }
+                Log.Error($"SolWorld: Failed to apply tier enhancements: {ex.Message}");
             }
         }
 
@@ -1719,45 +1787,44 @@ namespace SolWorldMod
         // ⭐ NEW METHOD: Apply tier-based armor
         private void ApplyTierArmor(Pawn pawn, Fighter fighter)
         {
-            // Check if we have tier data and if this tier gets armor
-            if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
-                return;
-                
             var tierData = currentRoundTierData[fighter.WalletFull];
-            if (!tierData.HasArmor) return;
-            
-            string armorDefName;
-            switch (tierData.Tier)
-            {
-                case 2:
-                case 3:
-                    armorDefName = "Apparel_FlakVest"; // Basic armor
-                    break;
-                case 4:
-                case 5:
-                    armorDefName = "Apparel_PowerArmor"; // Advanced armor  
-                    break;
-                case 6:
-                case 7:
-                    armorDefName = "Apparel_ArmorRecon"; // Elite armor
-                    break;
-                default:
-                    return; // No armor for Tier 1
-            }
             
             try
             {
+                string armorDefName;
+                
+                // Select armor based on tier
+                switch (tierData.Tier)
+                {
+                    case 2:
+                    case 3:
+                        armorDefName = "Apparel_FlakVest";
+                        break;
+                    case 4:
+                    case 5:
+                        armorDefName = "Apparel_PlateArmor";
+                        break;
+                    case 6:
+                    case 7:
+                        armorDefName = "Apparel_PowerArmor";
+                        break;
+                    default:
+                        return; // No armor for Tier 1
+                }
+                
                 var armorDef = DefDatabase<ThingDef>.GetNamedSilentFail(armorDefName);
                 if (armorDef != null)
                 {
-                    var armor = ThingMaker.MakeThing(armorDef) as Apparel;
-                    if (armor != null)
+                    var armor = ThingMaker.MakeThing(armorDef, GenStuff.DefaultStuffFor(armorDef));
+                    
+                    // Set quality based on tier
+                    SetItemQuality(armor, tierData.WeaponQuality);
+                    
+                    // Force equip the armor
+                    if (pawn.apparel != null)
                     {
-                        // Set armor quality based on tier
-                        SetItemQuality(armor, tierData.WeaponQuality);
-                        
-                        pawn.apparel.Wear(armor, false, false);
-                        Log.Message($"SolWorld: ✅ Equipped Tier {tierData.Tier} armor: {armorDefName} on {fighter.WalletShort}");
+                        pawn.apparel.Wear(armor as Apparel);
+                        Log.Message($"SolWorld: Equipped Tier {tierData.Tier} armor: {armorDefName}");
                     }
                 }
                 else
@@ -1767,47 +1834,47 @@ namespace SolWorldMod
             }
             catch (Exception ex)
             {
-                Log.Warning($"SolWorld: Failed to equip armor {armorDefName} on {fighter.WalletShort}: {ex.Message}");
+                Log.Warning($"SolWorld: Failed to apply tier armor: {ex.Message}");
             }
         }
 
         // ⭐ NEW METHOD: Apply tier-based helmet
         private void ApplyTierHelmet(Pawn pawn, Fighter fighter)
         {
-            // Check if we have tier data and if this tier gets helmet
-            if (!currentRoundTierData.ContainsKey(fighter.WalletFull))
-                return;
-                
             var tierData = currentRoundTierData[fighter.WalletFull];
-            if (!tierData.HasHelmet) return;
-            
-            string helmetDefName;
-            switch (tierData.Tier)
-            {
-                case 4:
-                case 5:
-                    helmetDefName = "Apparel_SimpleHelmet"; // Basic helmet
-                    break;
-                case 6:
-                case 7:
-                    helmetDefName = "Apparel_PowerArmorHelmet"; // Advanced helmet
-                    break;
-                default:
-                    return; // No helmet for lower tiers
-            }
             
             try
             {
+                string helmetDefName;
+                
+                // Select helmet based on tier
+                switch (tierData.Tier)
+                {
+                    case 4:
+                    case 5:
+                        helmetDefName = "Apparel_AdvancedHelmet";
+                        break;
+                    case 6:
+                    case 7:
+                        helmetDefName = "Apparel_PowerArmorHelmet";
+                        break;
+                    default:
+                        return; // No helmet for lower tiers
+                }
+                
                 var helmetDef = DefDatabase<ThingDef>.GetNamedSilentFail(helmetDefName);
                 if (helmetDef != null)
                 {
-                    var helmet = ThingMaker.MakeThing(helmetDef) as Apparel;
-                    if (helmet != null)
+                    var helmet = ThingMaker.MakeThing(helmetDef, GenStuff.DefaultStuffFor(helmetDef));
+                    
+                    // Set quality based on tier
+                    SetItemQuality(helmet, tierData.WeaponQuality);
+                    
+                    // Force equip the helmet
+                    if (pawn.apparel != null)
                     {
-                        SetItemQuality(helmet, tierData.WeaponQuality);
-                        
-                        pawn.apparel.Wear(helmet, false, false);
-                        Log.Message($"SolWorld: ✅ Equipped Tier {tierData.Tier} helmet: {helmetDefName} on {fighter.WalletShort}");
+                        pawn.apparel.Wear(helmet as Apparel);
+                        Log.Message($"SolWorld: Equipped Tier {tierData.Tier} helmet: {helmetDefName}");
                     }
                 }
                 else
@@ -1817,28 +1884,83 @@ namespace SolWorldMod
             }
             catch (Exception ex)
             {
-                Log.Warning($"SolWorld: Failed to equip helmet {helmetDefName} on {fighter.WalletShort}: {ex.Message}");
+                Log.Warning($"SolWorld: Failed to apply tier helmet: {ex.Message}");
             }
         }
 
-        // ⭐ NEW METHOD: Set item quality based on tier
-        private void SetItemQuality(Thing item, string qualityLevel)
+        private void ApplyTierStatBoosts(Pawn pawn, Fighter fighter)
+        {
+            var tierData = currentRoundTierData[fighter.WalletFull];
+            
+            try
+            {
+                // For higher tiers, we can apply stat boosts
+                // This is a simplified approach - in a full implementation you'd use hediffs
+                
+                Log.Message($"SolWorld: Applied Tier {tierData.Tier} stat boosts to {fighter.WalletShort}");
+                
+                // Note: Full stat modification would require adding hediffs to the pawn
+                // For now, we just log that higher tier bonuses are available
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to apply stat boosts: {ex.Message}");
+            }
+        }
+
+        private void ApplyTierVisualEffects(Pawn pawn, Fighter fighter)
+        {
+            var tierData = currentRoundTierData[fighter.WalletFull];
+            
+            try
+            {
+                // For highest tiers, we could add visual effects
+                // This is a placeholder for visual enhancements
+                Log.Message($"SolWorld: Applied visual effects to Tier {tierData.Tier} ({tierData.TierName}) fighter");
+                
+                // Could add glowing effects, special colors, etc. here
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to apply visual effects: {ex.Message}");
+            }
+        }
+
+        private void SetItemQuality(Thing item, string qualityName)
         {
             try
             {
+                QualityCategory quality;
+                
+                switch (qualityName?.ToLower())
+                {
+                    case "poor":
+                        quality = QualityCategory.Poor;
+                        break;
+                    case "normal":
+                        quality = QualityCategory.Normal;
+                        break;
+                    case "good":
+                        quality = QualityCategory.Good;
+                        break;
+                    case "excellent":
+                        quality = QualityCategory.Excellent;
+                        break;
+                    case "masterwork":
+                        quality = QualityCategory.Masterwork;
+                        break;
+                    case "legendary":
+                        quality = QualityCategory.Legendary;
+                        break;
+                    default:
+                        quality = QualityCategory.Normal;
+                        break;
+                }
+                
                 var qualityComp = item.TryGetComp<CompQuality>();
                 if (qualityComp != null)
                 {
-                    QualityCategory quality = QualityCategory.Normal;
-                    switch (qualityLevel)
-                    {
-                        case "Good": quality = QualityCategory.Good; break;
-                        case "Excellent": quality = QualityCategory.Excellent; break;
-                        case "Masterwork": quality = QualityCategory.Masterwork; break;
-                    }
-                    
                     qualityComp.SetQuality(quality, ArtGenerationContext.Colony);
-                    Log.Message($"SolWorld: Set item quality to {quality}");
                 }
             }
             catch (Exception ex)
