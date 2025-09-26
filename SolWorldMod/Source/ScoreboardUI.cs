@@ -260,87 +260,66 @@ namespace SolWorldMod
                 // Get tier info if available
                 var tierInfo = tierData?.ContainsKey(fighter.WalletFull) == true ? tierData[fighter.WalletFull] : null;
                 var tierLevel = tierInfo?.Tier ?? 1;
-                var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
-                var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
                 
-                // ENHANCED: Winner celebration aura for high-tier winners
-                if (tierLevel >= 6)
+                // Bright solid tier colors (matching leaderboard)
+                Color solidTierColor;
+                switch (tierLevel)
                 {
-                    DrawWinnerCelebrationAura(rect, tierLevel, tierColor);
+                    case 1: solidTierColor = new Color(0.6f, 0.6f, 0.6f, 1.0f); break; // Gray
+                    case 2: solidTierColor = new Color(0.2f, 0.8f, 0.2f, 1.0f); break; // Green
+                    case 3: solidTierColor = new Color(0.2f, 0.5f, 1.0f, 1.0f); break; // Blue
+                    case 4: solidTierColor = new Color(0.7f, 0.2f, 1.0f, 1.0f); break; // Purple
+                    case 5: solidTierColor = new Color(1.0f, 0.6f, 0.1f, 1.0f); break; // Orange
+                    case 6: solidTierColor = new Color(1.0f, 0.2f, 0.6f, 1.0f); break; // Pink
+                    case 7: solidTierColor = new Color(1.0f, 0.9f, 0.1f, 1.0f); break; // Gold
+                    default: solidTierColor = new Color(0.6f, 0.6f, 0.6f, 1.0f); break;
                 }
                 
-                // Enhanced background with tier influence
-                if (tierLevel >= 5) // High tier gets enhanced winner glow
+                // SUBTLE glow only for T7 winners
+                if (tierLevel >= 7)
                 {
-                    var celebrationGlow = 0.4f + 0.3f * Mathf.Sin(glowPulseTime * 2f);
-                    GUI.color = new Color(tierColor.r, tierColor.g, tierColor.b, celebrationGlow);
-                    GUI.DrawTexture(rect.ExpandedBy(3f), BaseContent.WhiteTex);
+                    var subtleGlow = 0.3f + 0.1f * Mathf.Sin(glowPulseTime * 1f);
+                    GUI.color = new Color(solidTierColor.r, solidTierColor.g, solidTierColor.b, subtleGlow);
+                    GUI.DrawTexture(rect.ExpandedBy(2f), BaseContent.WhiteTex);
                 }
                 
-                // PRESERVED: Winner box background
+                // Winner box background
                 GUI.color = new Color(teamColor.r, teamColor.g, teamColor.b, 0.3f);
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // PRESERVED: Winner box border
+                // Winner box border
                 GUI.color = teamColor;
                 Widgets.DrawBox(rect, 2);
                 
-                // PRESERVED: Trophy icon area
-                var trophyRect = new Rect(rect.x + 5f, rect.y + 5f, 20f, 20f);
-                GUI.color = Color.yellow;
-                GUI.DrawTexture(trophyRect, BaseContent.WhiteTex);
+                // Tier square with solid color and number (consistent with leaderboard)
+                var iconRect = new Rect(rect.x + 5f, rect.y + 5f, 24f, 24f);
                 
-                // PRESERVED: Draw trophy emoji text
-                GUI.color = Color.black;
-                Text.Font = GameFont.Tiny;
+                // Solid tier color fill
+                GUI.color = solidTierColor;
+                GUI.DrawTexture(iconRect, BaseContent.WhiteTex);
+                
+                // White border
+                GUI.color = Color.white;
+                Widgets.DrawBox(iconRect, 1);
+                
+                // White tier number
+                GUI.color = Color.white;
+                Text.Font = GameFont.Small;
                 Text.Anchor = TextAnchor.MiddleCenter;
-                Widgets.Label(trophyRect, "🏆");
+                Widgets.Label(iconRect, tierLevel.ToString());
                 
-                // ENHANCED: Tier icon in top-right with celebration effects
-                if (tierLevel > 1)
-                {
-                    var tierIconRect = new Rect(rect.xMax - 22f, rect.y + 2f, 18f, 18f);
-                    
-                    // Enhanced tier background for winners
-                    GUI.color = new Color(0f, 0f, 0f, 0.9f);
-                    GUI.DrawTexture(tierIconRect, BaseContent.WhiteTex);
-                    
-                    GUI.color = tierColor;
-                    Widgets.DrawBox(tierIconRect, 1);
-                    
-                    // Celebration sparkle for high-tier winners
-                    if (tierLevel >= 6)
-                    {
-                        var sparkleAlpha = 0.8f + 0.2f * Mathf.Sin(glowPulseTime * 6f);
-                        GUI.color = new Color(1f, 1f, 0f, sparkleAlpha);
-                        GUI.DrawTexture(tierIconRect.ExpandedBy(2f), BaseContent.WhiteTex);
-                    }
-                    
-                    GUI.color = Color.white;
-                    Text.Font = GameFont.Tiny;
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    Widgets.Label(tierIconRect, tierIcon);
-                }
-                
-                // PRESERVED: Wallet address (last 6 characters)
+                // Wallet address (bigger since we removed tier text)
                 var walletText = "..." + GetLast6Characters(fighter.WalletShort);
-                var walletRect = new Rect(rect.x + 30f, rect.y + 4f, rect.width - 55f, 20f); // Leave space for tier
+                var walletRect = new Rect(rect.x + 35f, rect.y + 8f, rect.width - 40f, 24f); // Centered vertically
                 
                 GUI.color = Color.white;
-                Text.Font = GameFont.Tiny;
+                Text.Font = GameFont.Small; // Bigger font
                 Text.Anchor = TextAnchor.MiddleLeft;
                 Widgets.Label(walletRect, walletText);
                 
-                // NEW: Tier level display
-                if (tierLevel > 1)
-                {
-                    var tierTextRect = new Rect(rect.x + 30f, rect.y + 18f, rect.width - 35f, 15f);
-                    GUI.color = tierColor;
-                    Text.Font = GameFont.Tiny;
-                    Widgets.Label(tierTextRect, $"Tier {tierLevel}");
-                }
+                // REMOVED: Redundant "Tier X" text since we have the tier square with number
                 
-                // ENHANCED: Enhanced tooltip for winners with tier info
+                // Tooltip
                 if (Mouse.IsOver(rect))
                 {
                     var tooltip = BuildWinnerTooltipWithTier(fighter, tierInfo);
@@ -349,6 +328,7 @@ namespace SolWorldMod
                 
                 GUI.color = oldColor;
                 Text.Anchor = TextAnchor.UpperLeft;
+                Text.Font = GameFont.Small;
             }
             catch (System.Exception ex)
             {
@@ -741,30 +721,17 @@ namespace SolWorldMod
                 // Get tier information
                 var tierInfo = tierData?.ContainsKey(fighter.WalletFull) == true ? tierData[fighter.WalletFull] : null;
                 var tierLevel = tierInfo?.Tier ?? 1;
-                var tierIcon = tierLevel <= TIER_ICONS.Length ? TIER_ICONS[tierLevel - 1] : "⚔️";
-                var tierColor = tierLevel <= TIER_COLORS.Length ? TIER_COLORS[tierLevel - 1] : TIER_COLORS[0];
                 
-                // ENHANCED: Draw mystical auras for T6-T7 fighters
-                if (fighter.Alive && tierLevel >= 6)
-                {
-                    DrawMysticalAura(rect, tierLevel, tierColor);
-                }
+                var oldColor = GUI.color;
                 
-                // ENHANCED: Background with tier influence and enhanced glow
+                // 1. MAIN FIGHTER BOX
                 var bgColor = fighter.Alive ? teamColor : Color.gray;
                 bgColor.a = fighter.Alive ? 0.9f : 0.6f;
                 
-                // Enhanced glow system for high-tier fighters
-                if (fighter.Alive && tierLevel >= 5)
-                {
-                    DrawEnhancedGlow(rect, tierLevel, tierColor);
-                }
-                
-                var oldColor = GUI.color;
                 GUI.color = bgColor;
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // PRESERVED: Enhanced border for alive fighters
+                // Box border
                 if (fighter.Alive)
                 {
                     GUI.color = Color.white;
@@ -772,20 +739,70 @@ namespace SolWorldMod
                 }
                 else
                 {
-                    // PRESERVED: Enhanced death marker
                     GUI.color = Color.red;
                     Widgets.DrawBox(rect, 2);
                     
-                    // PRESERVED: Draw larger death X
+                    // Death X
                     var centerX = rect.center.x;
                     var centerY = rect.center.y;
                     var crossSize = rect.width * 0.4f;
                     
-                    GUI.DrawTexture(new Rect(centerX - crossSize/2, centerY - 2f, crossSize, 4f), BaseContent.WhiteTex);
-                    GUI.DrawTexture(new Rect(centerX - 2f, centerY - crossSize/2, 4f, crossSize), BaseContent.WhiteTex);
+                    GUI.DrawTexture(new Rect(centerX - crossSize / 2, centerY - 2f, crossSize, 4f), BaseContent.WhiteTex);
+                    GUI.DrawTexture(new Rect(centerX - 2f, centerY - crossSize / 2, 4f, crossSize), BaseContent.WhiteTex);
                 }
                 
-                // PRESERVED: Enhanced kill count badge
+                // 2. SUBTLE AURAS FOR HIGH TIERS (T6-T7)
+                if (fighter.Alive && tierLevel >= 6)
+                {
+                    var auraColor = tierLevel == 7 ? new Color(1f, 0.8f, 0f, 0.3f) : new Color(0f, 1f, 1f, 0.2f); // Gold or Cyan
+                    var pulseIntensity = 0.3f + 0.1f * Mathf.Sin(glowPulseTime * 2f);
+                    auraColor.a *= pulseIntensity;
+                    
+                    // Simple 2-layer aura effect
+                    for (int i = 0; i < 2; i++)
+                    {
+                        var expansion = 3f + (i * 2f);
+                        var auraRect = rect.ExpandedBy(expansion);
+                        var layerAlpha = auraColor.a * (0.8f - i * 0.3f);
+                        
+                        GUI.color = new Color(auraColor.r, auraColor.g, auraColor.b, layerAlpha);
+                        GUI.DrawTexture(auraRect, BaseContent.WhiteTex);
+                    }
+                }
+                
+                // 3. TIER SQUARE - ALWAYS SHOW ALL TIERS INCLUDING TIER 1
+                var tierSquareSize = 28f;
+                var tierRect = new Rect(rect.x + 2f, rect.y + 2f, tierSquareSize, tierSquareSize);
+                
+                // Bright solid tier colors
+                Color solidTierColor;
+                switch (tierLevel)
+                {
+                    case 1: solidTierColor = new Color(0.6f, 0.6f, 0.6f, 1.0f); break; // Gray
+                    case 2: solidTierColor = new Color(0.2f, 0.8f, 0.2f, 1.0f); break; // Green
+                    case 3: solidTierColor = new Color(0.2f, 0.5f, 1.0f, 1.0f); break; // Blue
+                    case 4: solidTierColor = new Color(0.7f, 0.2f, 1.0f, 1.0f); break; // Purple
+                    case 5: solidTierColor = new Color(1.0f, 0.6f, 0.1f, 1.0f); break; // Orange
+                    case 6: solidTierColor = new Color(1.0f, 0.2f, 0.6f, 1.0f); break; // Pink
+                    case 7: solidTierColor = new Color(1.0f, 0.9f, 0.1f, 1.0f); break; // Gold
+                    default: solidTierColor = new Color(0.6f, 0.6f, 0.6f, 1.0f); break;
+                }
+                
+                // Fill with solid bright color
+                GUI.color = solidTierColor;
+                GUI.DrawTexture(tierRect, BaseContent.WhiteTex);
+                
+                // White border
+                GUI.color = Color.white;
+                Widgets.DrawBox(tierRect, 1);
+                
+                // White tier number
+                GUI.color = Color.white;
+                Text.Font = GameFont.Small;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                Widgets.Label(tierRect, tierLevel.ToString());
+                
+                // 4. KILL COUNT BADGE
                 if (fighter.Kills > 0)
                 {
                     var killRect = new Rect(rect.xMax - 22f, rect.y, 22f, 22f);
@@ -801,67 +818,38 @@ namespace SolWorldMod
                     Widgets.Label(killRect, fighter.Kills.ToString());
                 }
                 
-                // ENHANCED: Enhanced tier indicator with icons and better visibility
-                if (tierLevel > 1)
-                {
-                    var tierRect = new Rect(rect.x + 2f, rect.y + 2f, 18f, 18f);
-                    
-                    // Enhanced tier background with better contrast
-                    GUI.color = new Color(0f, 0f, 0f, 0.8f);
-                    GUI.DrawTexture(tierRect, BaseContent.WhiteTex);
-                    
-                    GUI.color = tierColor;
-                    Widgets.DrawBox(tierRect, 1);
-                    
-                    // Draw tier icon with better visibility
-                    GUI.color = Color.white;
-                    Text.Font = GameFont.Tiny;
-                    Text.Anchor = TextAnchor.MiddleCenter;
-                    Widgets.Label(tierRect, tierIcon);
-                    
-                    // Add tier number in corner for high tiers
-                    if (tierLevel >= 6)
-                    {
-                        var tierNumRect = new Rect(rect.x + 16f, rect.y + 16f, 12f, 12f);
-                        GUI.color = tierColor;
-                        Text.Font = GameFont.Tiny;
-                        Widgets.Label(tierNumRect, tierLevel.ToString());
-                    }
-                }
-                
-                // PRESERVED: Fighter name on larger boxes
+                // 5. FIGHTER NAME
                 if (rect.width >= 50f)
                 {
-                    GUI.color = Color.white;
-                    Text.Font = GameFont.Tiny;
-                    Text.Anchor = TextAnchor.MiddleCenter;
                     var nameRect = new Rect(rect.x, rect.yMax - 18f, rect.width, 16f);
                     var shortName = "..." + GetLast6Characters(fighter.WalletShort);
                     
-                    // PRESERVED: Background for name
                     GUI.color = new Color(0f, 0f, 0f, 0.8f);
                     GUI.DrawTexture(nameRect, BaseContent.WhiteTex);
-                    GUI.color = Color.white;
                     
+                    GUI.color = Color.white;
+                    Text.Font = GameFont.Tiny;
+                    Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(nameRect, shortName);
                 }
                 
-                // ENHANCED: Enhanced tooltip with tier information
+                // 6. TOOLTIP
                 if (Mouse.IsOver(rect))
                 {
                     var tooltip = BuildEnhancedFighterTooltipWithTier(fighter, tierInfo);
                     TooltipHandler.TipRegion(rect, tooltip);
                 }
                 
+                // Reset GUI state
                 GUI.color = oldColor;
-                Text.Font = GameFont.Small;
                 Text.Anchor = TextAnchor.UpperLeft;
+                Text.Font = GameFont.Small;
             }
             catch (System.Exception ex)
             {
                 if (Prefs.DevMode)
                 {
-                    Log.Warning($"SolWorld: Enhanced fighter box draw error: {ex.Message}");
+                    Log.Warning($"SolWorld: Fighter box draw error: {ex.Message}");
                 }
             }
         }
