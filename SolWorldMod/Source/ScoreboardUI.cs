@@ -804,15 +804,37 @@ namespace SolWorldMod
             DrawTeamPawnSquaresWithTiers(roster.Red, TeamColor.Red, startX, pawnY, pawnBoxSize, pawnBoxSpacing, arenaComp.currentRoundTierData);
             DrawTeamPawnSquaresWithTiers(roster.Blue, TeamColor.Blue, blueStartX, pawnY, pawnBoxSize, pawnBoxSpacing, arenaComp.currentRoundTierData);
             
-            // PRESERVED: VS indicator in the middle
-            var vsRect = new Rect(startX + redTeamWidth + 10f, pawnY + pawnBoxSize / 2f - 10f, teamSeparation - 20f, 20f);
+            // ENHANCED: VS indicator in the middle with bold styling and better positioning
+            var vsRect = new Rect(startX + redTeamWidth + 10f, pawnY + pawnBoxSize / 2f - 15f, teamSeparation - 20f, 30f); // Increased height and moved up
             var oldColor = GUI.color;
+            var oldFont = Text.Font;
+            var oldAnchor = Text.Anchor;
+            
+            // Create bold effect for VS text
             GUI.color = Color.yellow;
             Text.Font = GameFont.Medium;
             Text.Anchor = TextAnchor.MiddleCenter;
+            
+            // Draw bold outline (multiple passes for bold effect)
+            var boldVsRect1 = new Rect(vsRect.x - 1f, vsRect.y, vsRect.width, vsRect.height);
+            var boldVsRect2 = new Rect(vsRect.x + 1f, vsRect.y, vsRect.width, vsRect.height);
+            var boldVsRect3 = new Rect(vsRect.x, vsRect.y - 1f, vsRect.width, vsRect.height);
+            var boldVsRect4 = new Rect(vsRect.x, vsRect.y + 1f, vsRect.width, vsRect.height);
+            
+            // Slightly darker color for outline
+            GUI.color = Color.yellow * 0.8f;
+            Widgets.Label(boldVsRect1, "VS");
+            Widgets.Label(boldVsRect2, "VS");
+            Widgets.Label(boldVsRect3, "VS");
+            Widgets.Label(boldVsRect4, "VS");
+            
+            // Draw main VS text on top
+            GUI.color = Color.yellow;
             Widgets.Label(vsRect, "VS");
-            Text.Font = GameFont.Small;
-            Text.Anchor = TextAnchor.UpperLeft;
+            
+            // Restore original styling
+            Text.Font = oldFont;
+            Text.Anchor = oldAnchor;
             GUI.color = oldColor;
         }
         
@@ -823,17 +845,41 @@ namespace SolWorldMod
             
             var teamColor = team == TeamColor.Red ? Color.red : Color.blue;
             var oldColor = GUI.color;
-            GUI.color = teamColor;
+            var oldFont = Text.Font;
+            var oldAnchor = Text.Anchor;
             
-            Text.Font = GameFont.Small;
+            // ENHANCED: Bold and larger font for team headers
+            GUI.color = teamColor;
+            Text.Font = GameFont.Medium; // Larger font (was GameFont.Small)
             Text.Anchor = TextAnchor.MiddleCenter;
             
-            var headerRect = new Rect(startX, y, width, 22f);
+            // RAISED: Move the header up by reducing the Y position
+            var headerRect = new Rect(startX, y - 10f, width, 30f); // Moved up by 10 pixels
             var aliveCount = fighters.Count(f => f.Alive);
             var teamHeader = $"{team.ToString().ToUpper()} TEAM ({aliveCount}/10)";
+            
+            // Create bold effect by drawing text multiple times with slight offsets
+            var originalColor = GUI.color;
+            
+            // Draw bold outline (multiple passes for bold effect)
+            GUI.color = teamColor * 0.8f; // Slightly darker for outline
+            var boldRect1 = new Rect(headerRect.x - 1f, headerRect.y, headerRect.width, headerRect.height);
+            var boldRect2 = new Rect(headerRect.x + 1f, headerRect.y, headerRect.width, headerRect.height);
+            var boldRect3 = new Rect(headerRect.x, headerRect.y - 1f, headerRect.width, headerRect.height);
+            var boldRect4 = new Rect(headerRect.x, headerRect.y + 1f, headerRect.width, headerRect.height);
+            
+            Widgets.Label(boldRect1, teamHeader);
+            Widgets.Label(boldRect2, teamHeader);
+            Widgets.Label(boldRect3, teamHeader);
+            Widgets.Label(boldRect4, teamHeader);
+            
+            // Draw main text on top
+            GUI.color = originalColor;
             Widgets.Label(headerRect, teamHeader);
             
-            Text.Anchor = TextAnchor.UpperLeft;
+            // Restore original styling
+            Text.Font = oldFont;
+            Text.Anchor = oldAnchor;
             GUI.color = oldColor;
         }
         
