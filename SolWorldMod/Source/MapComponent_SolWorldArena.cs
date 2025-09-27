@@ -41,6 +41,11 @@ namespace SolWorldMod
         // ⭐ ADD THIS LINE RIGHT HERE: ⭐
         //private static bool lastRoundFavoredRed = false; // Track spawn order
 
+        //Optimized transaction tracking
+        private int lastMemoryCheckTick = 0;
+        private int lastPerformanceReportTick = 0;
+        private bool isPerformingMemoryCleanup = false;
+
         // Tier system data structures
         public Dictionary<string, TieredFighter> currentRoundTierData { get; private set; } = new Dictionary<string, TieredFighter>();
 
@@ -225,7 +230,11 @@ namespace SolWorldMod
                 }
                 
                 if (!isActive || arenaCore?.IsOperational != true)
+                {
+                    // Still run memory maintenance even when arena is inactive
+                    PerformPeriodicMemoryMaintenance();
                     return;
+                }
                     
                 var currentTick = Find.TickManager.TicksGame;
                 
@@ -260,6 +269,12 @@ namespace SolWorldMod
                 {
                     UpdateRosterStatus();
                 }
+                
+                // MEMORY OPTIMIZATION: Preventive cleanup during combat to avoid memory spikes
+                if (currentState == ArenaState.Combat && currentTick % 600 == 0) // Every 10 seconds during combat
+                {
+                    PreventivePawnCleanup();
+                }
             }
             catch (System.Exception ex)
             {
@@ -269,8 +284,39 @@ namespace SolWorldMod
                 if (currentState == ArenaState.Combat)
                 {
                     Log.Error("SolWorld: Emergency stop due to critical error during combat");
-                    StopAllArenaPawnJobs();
+                    
+                    // MEMORY OPTIMIZATION: Emergency cleanup with memory management
+                    try
+                    {
+                        var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).Where(p => p != null).ToList();
+                        if (allArenaPawns.Any())
+                        {
+                            MemoryManager.PerformArenaCleanup(map, allArenaPawns);
+                        }
+                        StopAllArenaPawnJobs();
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        Log.Error($"SolWorld: Emergency memory cleanup also failed: {cleanupEx.Message}");
+                    }
+                    
                     EndRound("Critical error - emergency stop");
+                }
+            }
+            finally
+            {
+                // MEMORY OPTIMIZATION: Always run periodic memory maintenance
+                // This ensures memory monitoring continues even if errors occur
+                try
+                {
+                    PerformPeriodicMemoryMaintenance();
+                }
+                catch (Exception memEx)
+                {
+                    // Silent fail - don't let memory monitoring crash the main tick
+                    {
+                        Log.Warning($"SolWorld: Memory maintenance failed: {memEx.Message}");
+                    }
                 }
             }
         }
@@ -381,31 +427,47 @@ namespace SolWorldMod
         // FIXED: Execute arena reset from UI context with complete reset system
         private void ExecuteArenaReset()
         {
-            Log.Message("SolWorld: ===== EXECUTING ARENA RESET FROM UI CONTEXT =====");
+            Log.Message("SolWorld: ===== EXECUTING MEMORY-OPTIMIZED ARENA RESET =====");
+            
+            // Pre-reset memory snapshot for comparison
+            var memoryBefore = GC.GetTotalMemory(false);
+            var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).Where(p => p != null).ToList();
             
             try
             {
-                // STEP 1: Stop all pawn jobs to prevent errors during reset
+                // STEP 1: Pre-reset memory cleanup to free up space before reset operations
+                Log.Message("SolWorld: Starting pre-reset memory cleanup...");
+                if (allArenaPawns.Any())
+                {
+                    MemoryManager.PerformArenaCleanup(map, allArenaPawns);
+                }
+                
+                // STEP 2: Stop all pawn jobs to prevent errors during reset
                 StopAllArenaPawnJobs();
                 
-                // STEP 2: Cleanup current round pawns
-                CleanupCurrentRound();
+                // STEP 3: Enhanced memory-optimized cleanup of current round pawns
+                Log.Message("SolWorld: Performing memory-optimized pawn cleanup...");
+                CleanupCurrentRoundWithMemoryOptimization();
                 
-                // STEP 3: Perform arena reset if blueprint exists
+                // STEP 4: Perform arena reset if blueprint exists
                 var bounds = GetArenaBounds();
                 if (bounds.HasValue && arenaBlueprint.IsInitialized)
                 {
                     Log.Message("SolWorld: Resetting arena to original state...");
                     arenaReset.ResetArena(map, bounds.Value, arenaBlueprint);
+                    
+                    // MEMORY OPTIMIZATION: Post-reset cleanup to clear any debris from reset process
+                    MemoryManager.PerformArenaCleanup(map);
                 }
                 else
                 {
                     Log.Warning("SolWorld: Cannot reset arena - no bounds or blueprint not initialized");
                 }
                 
-                // STEP 4: Reset all state to idle and schedule next round
+                // STEP 5: Reset all state to idle and clear memory references
+                Log.Message("SolWorld: Clearing all arena state and memory references...");
                 currentState = ArenaState.Idle;
-                currentRoster = null; // NOW it's safe to clear the roster
+                currentRoster = null; // Clear roster reference
                 combatStartTick = -1;
                 roundEndTick = -1;
                 combatInitiated = false;
@@ -413,40 +475,103 @@ namespace SolWorldMod
                 lastAggressiveEnforcementTick = -1;
                 previewCompleted = false;
                 uiShouldTriggerUnpause = false;
-                uiShouldTriggerReset = false; // IMPORTANT: Clear the reset flag
-                pawnLastActionTick.Clear();
+                uiShouldTriggerReset = false; // Clear the reset flag
                 
-                // STEP 5: CRITICAL - Force refresh spawners after reset to prevent disappearing buttons
+                // MEMORY OPTIMIZATION: Safely clear all tracking collections
+                SafeClearCollections();
+                
+                // STEP 6: CRITICAL - Force refresh spawners after reset to prevent disappearing buttons
                 ForceRefreshSpawners();
                 
-                // STEP 6: Schedule next round
+                // STEP 7: Final comprehensive memory cleanup
+                Log.Message("SolWorld: Performing final memory optimization...");
+                MemoryManager.PerformArenaCleanup(map);
+                
+                // STEP 8: Schedule next round
                 ScheduleNextRound();
                 
-                Messages.Message("Arena reset complete! Next round in 3 minutes.", MessageTypeDefOf.PositiveEvent);
-                Log.Message("SolWorld: ===== ARENA RESET COMPLETE =====");
+                // Memory usage report
+                var memoryAfter = GC.GetTotalMemory(false);
+                var memoryFreed = memoryBefore - memoryAfter;
+                
+                if (memoryFreed > 0)
+                {
+                    Log.Message($"SolWorld: Memory-optimized reset freed {memoryFreed / 1024 / 1024:F1} MB");
+                }
+                
+                Messages.Message("Arena reset complete! Memory optimized. Next round in 3 minutes.", MessageTypeDefOf.PositiveEvent);
+                Log.Message("SolWorld: ===== MEMORY-OPTIMIZED ARENA RESET COMPLETE =====");
             }
             catch (Exception ex)
             {
-                Log.Error($"SolWorld: Arena reset failed: {ex.Message}\n{ex.StackTrace}");
+                Log.Error($"SolWorld: Memory-optimized arena reset failed: {ex.Message}\n{ex.StackTrace}");
                 
-                // Emergency recovery - clear flags and try to continue
-                uiShouldTriggerReset = false;
-                currentState = ArenaState.Idle;
-                currentRoster = null;
-                
-                // Force refresh spawners even in error case
+                // Emergency recovery with memory cleanup
                 try
                 {
+                    Log.Message("SolWorld: Attempting emergency recovery with memory cleanup...");
+                    
+                    // Emergency memory cleanup
+                    if (allArenaPawns.Any())
+                    {
+                        MemoryManager.PerformArenaCleanup(map, allArenaPawns);
+                    }
+                    
+                    // Clear all flags and state
+                    uiShouldTriggerReset = false;
+                    currentState = ArenaState.Idle;
+                    currentRoster = null;
+                    
+                    // Safe collection clearing
+                    SafeClearCollections();
+                    
+                    // Force refresh spawners even in error case
                     ForceRefreshSpawners();
+                    
+                    // Emergency garbage collection
+                    GC.Collect();
+                    
+                    Log.Message("SolWorld: Emergency recovery with memory cleanup completed");
                 }
-                catch
+                catch (Exception recoveryEx)
                 {
-                    Log.Error("SolWorld: Emergency spawner refresh also failed!");
+                    Log.Error($"SolWorld: Emergency recovery also failed: {recoveryEx.Message}");
+                    
+                    // Last resort - try to at least clear the reset flag
+                    uiShouldTriggerReset = false;
+                    currentState = ArenaState.Idle;
+                    
+                    // Nuclear option - emergency shutdown with cleanup
+                    try
+                    {
+                        EmergencyShutdownWithCleanup();
+                    }
+                    catch
+                    {
+                        Log.Error("SolWorld: Nuclear emergency shutdown also failed!");
+                    }
                 }
                 
                 ScheduleNextRound();
                 
-                Messages.Message("Arena reset encountered errors but recovered", MessageTypeDefOf.CautionInput);
+                Messages.Message("Arena reset encountered errors but recovered with memory cleanup", MessageTypeDefOf.CautionInput);
+            }
+            finally
+            {
+                // MEMORY OPTIMIZATION: Always ensure memory maintenance runs after reset
+                try
+                {
+                    // Force a memory monitoring check after reset
+                    lastMemoryCheckTick = 0; // Force immediate check on next tick
+                    PerformPeriodicMemoryMaintenance();
+                }
+                catch (Exception finalEx)
+                {
+                    // Silent fail - don't crash the reset over memory monitoring
+                    {
+                        Log.Warning($"SolWorld: Final memory maintenance failed: {finalEx.Message}");
+                    }
+                }
             }
         }
         
@@ -846,7 +971,7 @@ namespace SolWorldMod
             
             if (currentRoster != null)
             {
-                CleanupCurrentRound();
+                CleanupCurrentRoundWithMemoryOptimization();
             }
             
             Messages.Message("Arena deactivated", MessageTypeDefOf.NeutralEvent);
@@ -3243,58 +3368,244 @@ namespace SolWorldMod
             }
         }
         
-        // FIXED: Cleanup with preserved spawner references
-        private void CleanupCurrentRound()
+        private void CleanupCurrentRoundWithMemoryOptimization()
         {
-            if (currentRoster == null) return;
+            if (currentRoster == null || isPerformingMemoryCleanup) return;
             
-            Log.Message("SolWorld: Starting current round cleanup...");
+            isPerformingMemoryCleanup = true;
             
-            // STEP 1: Clean up all arena pawns (but preserve spawner references!)
-            var allArenaPawns = redTeamPawns.Concat(blueTeamPawns).ToList();
+            // Track memory before cleanup
+            var memoryBefore = GC.GetTotalMemory(false);
+            Log.Message($"SolWorld: Starting SAFE memory cleanup... Memory before: {memoryBefore / 1024f / 1024f:F1} MB");
             
-            foreach (var pawn in allArenaPawns)
+            try
             {
-                if (pawn?.Spawned == true)
+                // STEP 1: Collect all arena pawns
+                var allArenaPawns = redTeamPawns.Concat(blueTeamPawns)
+                    .Where(p => p != null)
+                    .ToList();
+                
+                // STEP 2: SAFE pawn cleanup - only basic operations
+                foreach (var pawn in allArenaPawns)
                 {
-                    try
+                    if (pawn?.Spawned == true)
                     {
-                        // Stop all jobs first to prevent pathing errors
-                        if (pawn.jobs != null)
+                        try
                         {
-                            pawn.jobs.EndCurrentJob(JobCondition.InterruptForced);
-                            pawn.jobs.ClearQueuedJobs();
+                            // Basic job cleanup
+                            if (pawn.jobs != null)
+                            {
+                                pawn.jobs.EndCurrentJob(Verse.AI.JobCondition.InterruptForced);
+                                pawn.jobs.ClearQueuedJobs();
+                            }
+                            
+                            // Basic pathfinding stop
+                            if (pawn.pather != null)
+                            {
+                                pawn.pather.StopDead();
+                            }
+                            
+                            // Basic mind state cleanup
+                            if (pawn.mindState != null)
+                            {
+                                pawn.mindState.enemyTarget = null;
+                                pawn.mindState.lastEngageTargetTick = 0;
+                            }
+                            
+                            // Basic stance cleanup
+                            if (pawn.stances != null)
+                            {
+                                pawn.stances.SetStance(new Stance_Mobile());
+                            }
+                            
+                            // Remove from tracking
+                            pawnTeamMap.Remove(pawn);
+                            pawnLastActionTick.Remove(pawn);
+                            redTeamPawns.Remove(pawn);
+                            blueTeamPawns.Remove(pawn);
+                            
+                            // Despawn
+                            pawn.DeSpawn();
+                            Log.Message($"SolWorld: Safely cleaned pawn: {pawn.Name}");
                         }
-                        
-                        // Remove from team mappings
-                        pawnTeamMap.Remove(pawn);
-                        pawnLastActionTick.Remove(pawn);
-                        
-                        // Despawn the pawn
-                        pawn.DeSpawn();
-                        Log.Message($"SolWorld: Despawned arena pawn: {pawn.Name}");
+                        catch (Exception ex)
+                        {
+                            Log.Warning($"SolWorld: Failed safe cleanup for {pawn.Name}: {ex.Message}");
+                        }
                     }
-                    catch (System.Exception ex)
+                }
+                
+                // STEP 3: Clear collections
+                redTeamPawns?.Clear();
+                blueTeamPawns?.Clear();
+                pawnTeamMap?.Clear();
+                pawnLastActionTick?.Clear();
+                
+                // STEP 4: SAFE map cleanup - only basic operations
+                try
+                {
+                    // Only use basic map operations that definitely exist
+                    if (map?.regionGrid != null)
                     {
-                        Log.Warning($"SolWorld: Failed to despawn pawn {pawn.Name}: {ex.Message}");
+                        map.regionGrid.UpdateClean();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"SolWorld: Failed to clean map caches: {ex.Message}");
+                }
+                
+                // STEP 5: Basic garbage collection
+                GC.Collect();
+                
+                // STEP 6: Unity resource cleanup
+                Resources.UnloadUnusedAssets();
+                
+                // STEP 7: Reset faction references
+                redTeamFaction = null;
+                blueTeamFaction = null;
+                
+                // Track memory after cleanup
+                var memoryAfter = GC.GetTotalMemory(false);
+                var memoryFreed = (memoryBefore - memoryAfter) / 1024f / 1024f;
+                
+                Log.Message($"SolWorld: SAFE cleanup completed - Memory after: {memoryAfter / 1024f / 1024f:F1} MB, Freed: {memoryFreed:F1} MB");
+                
+                if (memoryFreed < 1f)
+                {
+                    Log.Message($"SolWorld: Low memory recovery ({memoryFreed:F1} MB) but cleanup completed safely");
+                }
+                else
+                {
+                    Log.Message($"SolWorld: ✅ Memory recovery: {memoryFreed:F1} MB freed");
+                }
+                
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: SAFE memory cleanup failed: {ex.Message}");
+            }
+            finally
+            {
+                isPerformingMemoryCleanup = false;
+            }
+        }
+
+        /// <summary>
+        /// Fixed: Periodic memory monitoring without SolWorldSettings.DebugMode
+        /// </summary>
+        private void PerformPeriodicMemoryMaintenance()
+        {
+            var currentTick = Find.TickManager.TicksGame;
+            
+            // Monitor performance every 5 seconds
+            if (currentTick - lastMemoryCheckTick >= 300) // 5 seconds
+            {
+                lastMemoryCheckTick = currentTick;
+                
+                var memory = GC.GetTotalMemory(false);
+                var memoryMB = memory / 1024f / 1024f;
+                
+                // Report memory usage
+                if (memoryMB > 300) // 300MB reporting threshold
+                {
+                    Log.Message($"SolWorld: Memory usage: {memoryMB:F1} MB");
+                    
+                    if (memoryMB > 500) // 500MB emergency threshold
+                    {
+                        Log.Warning("SolWorld: High memory usage - forcing basic cleanup");
+                        
+                        // SAFE: Basic garbage collection only
+                        GC.Collect();
+                        Resources.UnloadUnusedAssets();
+                        
+                        var memoryAfterGC = GC.GetTotalMemory(false);
+                        var freedMB = (memory - memoryAfterGC) / 1024f / 1024f;
+                        Log.Message($"SolWorld: Basic GC freed {freedMB:F1} MB (was {memoryMB:F1} MB, now {memoryAfterGC / 1024f / 1024f:F1} MB)");
                     }
                 }
             }
             
-            // STEP 2: Clear tracking collections
-            redTeamPawns.Clear();
-            blueTeamPawns.Clear();
-            pawnTeamMap.Clear();
-            pawnLastActionTick.Clear();
+            // Performance report every 30 seconds
+            if (currentTick - lastPerformanceReportTick >= 1800) // 30 seconds
+            {
+                lastPerformanceReportTick = currentTick;
+                
+                try
+                {
+                    var report = MemoryManager.GetPerformanceReport();
+                    Log.Message($"SolWorld Performance Report: {report}");
+                }
+                catch
+                {
+                    // Fallback report
+                    var memory = GC.GetTotalMemory(false);
+                    var fps = Mathf.RoundToInt(1f / Time.deltaTime);
+                    Log.Message($"SolWorld: Memory: {memory / 1024f / 1024f:F1} MB, FPS: {fps}");
+                }
+            }
+        }
+
+
+        /// <summary>
+        /// Safely clear collections with null checking
+        /// </summary>
+        private void SafeClearCollections()
+        {
+            try
+            {
+                redTeamPawns?.Clear();
+                blueTeamPawns?.Clear();
+                pawnTeamMap?.Clear();
+                pawnLastActionTick?.Clear();
+            }
+            catch (Exception ex)
+            {
+                Log.Warning($"SolWorld: Failed to clear collections: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Emergency shutdown with memory cleanup
+        /// </summary>
+        public void EmergencyShutdownWithCleanup()
+        {
+            Log.Warning("SolWorld: Performing emergency shutdown with memory cleanup...");
             
-            // STEP 3: Clean up faction references (but keep spawner buildings!)
-            redTeamFaction = null;
-            blueTeamFaction = null;
-            
-            // CRITICAL: DO NOT clear spawner references during cleanup!
-            // They should persist between rounds
-            
-            Log.Message("SolWorld: Current round cleanup complete - preserving spawners");
+            try
+            {
+                // Stop all arena operations
+                if (isActive)
+                {
+                    StopArena();
+                }
+                
+                // Comprehensive cleanup
+                CleanupCurrentRoundWithMemoryOptimization();
+                
+                // Emergency memory cleanup
+                try
+                {
+                    MemoryManager.PerformArenaCleanup(map);
+                }
+                catch
+                {
+                    // Fallback cleanup
+                    GC.Collect();
+                    Log.Message("SolWorld: Used fallback emergency cleanup");
+                }
+                
+                // Reset all state
+                currentState = ArenaState.Idle;
+                isActive = false;
+                currentRoster = null;
+                
+                Log.Message("SolWorld: Emergency shutdown completed");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"SolWorld: Emergency shutdown failed: {ex.Message}");
+            }
         }
         
         // ADD: Method to stop all arena pawn jobs

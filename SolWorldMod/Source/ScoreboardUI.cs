@@ -780,6 +780,8 @@ namespace SolWorldMod
             }
         }
         
+        
+
         // ENHANCED: Team displays with tier information
         private static void DrawIntegratedTeamDisplaysWithTiers(RoundRoster roster, MapComponent_SolWorldArena arenaComp, Rect innerRect, float startY, float pawnBoxSize, float pawnBoxSpacing, float teamSeparation)
         {
@@ -875,27 +877,11 @@ namespace SolWorldMod
                 GUI.color = bgColor;
                 GUI.DrawTexture(rect, BaseContent.WhiteTex);
                 
-                // Box border
-                if (fighter.Alive)
-                {
-                    GUI.color = Color.white;
-                    Widgets.DrawBox(rect, 2);
-                }
-                else
-                {
-                    GUI.color = Color.red;
-                    Widgets.DrawBox(rect, 2);
-                    
-                    // Death X
-                    var centerX = rect.center.x;
-                    var centerY = rect.center.y;
-                    var crossSize = rect.width * 0.4f;
-                    
-                    GUI.DrawTexture(new Rect(centerX - crossSize / 2, centerY - 2f, crossSize, 4f), BaseContent.WhiteTex);
-                    GUI.DrawTexture(new Rect(centerX - 2f, centerY - crossSize / 2, 4f, crossSize), BaseContent.WhiteTex);
-                }
+                // Box border (red for dead, white for alive)
+                GUI.color = fighter.Alive ? Color.white : Color.red;
+                Widgets.DrawBox(rect, 2);
                 
-                // 2. SUBTLE AURAS FOR HIGH TIERS (T6-T7)
+                // 2. SUBTLE AURAS FOR HIGH TIERS (T6-T7) - ONLY FOR ALIVE FIGHTERS
                 if (fighter.Alive && tierLevel >= 6)
                 {
                     var auraColor = tierLevel == 7 ? new Color(1f, 0.8f, 0f, 0.3f) : new Color(0f, 1f, 1f, 0.2f); // Gold or Cyan
@@ -914,7 +900,7 @@ namespace SolWorldMod
                     }
                 }
                 
-                // 3. TIER SQUARE - ALWAYS SHOW ALL TIERS INCLUDING TIER 1
+                // 3. TIER SQUARE - ENHANCED DIMMING FOR DEAD FIGHTERS
                 var tierSquareSize = 28f;
                 var tierRect = new Rect(rect.x + 2f, rect.y + 2f, tierSquareSize, tierSquareSize);
                 
@@ -932,46 +918,64 @@ namespace SolWorldMod
                     default: solidTierColor = new Color(0.6f, 0.6f, 0.6f, 1.0f); break;
                 }
                 
-                // Fill with solid bright color
+                // ENHANCED: Dim tier colors for dead fighters
+                if (!fighter.Alive)
+                {
+                    solidTierColor = Color.Lerp(solidTierColor, Color.gray, 0.7f);
+                    solidTierColor.a = 0.5f;
+                }
+                
+                // Fill with solid color (dimmed if dead)
                 GUI.color = solidTierColor;
                 GUI.DrawTexture(tierRect, BaseContent.WhiteTex);
                 
-                // White border
-                GUI.color = Color.white;
+                // Border (red for dead, white for alive)
+                GUI.color = fighter.Alive ? Color.white : Color.red;
                 Widgets.DrawBox(tierRect, 1);
                 
-                // White tier number
-                GUI.color = Color.white;
+                // Tier number (dimmed for dead fighters)
+                GUI.color = fighter.Alive ? Color.white : new Color(0.7f, 0.7f, 0.7f, 0.8f);
                 Text.Font = GameFont.Small;
                 Text.Anchor = TextAnchor.MiddleCenter;
                 Widgets.Label(tierRect, tierLevel.ToString());
                 
-                // 4. KILL COUNT BADGE
+                // 4. KILL COUNT BADGE (ENHANCED DIMMING FOR DEAD FIGHTERS)
                 if (fighter.Kills > 0)
                 {
                     var killRect = new Rect(rect.xMax - 22f, rect.y, 22f, 22f);
-                    GUI.color = Color.yellow;
+                    
+                    // Dim kill badge for dead fighters
+                    if (fighter.Alive)
+                    {
+                        GUI.color = Color.yellow;
+                    }
+                    else
+                    {
+                        GUI.color = new Color(0.6f, 0.6f, 0.2f, 0.7f); // Dimmed yellow
+                    }
                     GUI.DrawTexture(killRect, BaseContent.WhiteTex);
                     
-                    GUI.color = Color.black;
+                    GUI.color = fighter.Alive ? Color.black : new Color(0.3f, 0.3f, 0.3f, 0.8f);
                     Widgets.DrawBox(killRect, 1);
                     
-                    GUI.color = Color.black;
+                    GUI.color = fighter.Alive ? Color.black : new Color(0.5f, 0.5f, 0.5f, 0.9f);
                     Text.Font = GameFont.Small;
                     Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(killRect, fighter.Kills.ToString());
                 }
                 
-                // 5. FIGHTER NAME
+                // 5. FIGHTER NAME (ENHANCED DIMMING FOR DEAD FIGHTERS)
                 if (rect.width >= 50f)
                 {
                     var nameRect = new Rect(rect.x, rect.yMax - 18f, rect.width, 16f);
                     var shortName = "..." + GetLast6Characters(fighter.WalletShort);
                     
-                    GUI.color = new Color(0f, 0f, 0f, 0.8f);
+                    // Semi-transparent background (more transparent for dead)
+                    GUI.color = fighter.Alive ? new Color(0f, 0f, 0f, 0.8f) : new Color(0f, 0f, 0f, 0.5f);
                     GUI.DrawTexture(nameRect, BaseContent.WhiteTex);
                     
-                    GUI.color = Color.white;
+                    // Dimmed text for dead fighters
+                    GUI.color = fighter.Alive ? Color.white : new Color(0.6f, 0.6f, 0.6f, 0.8f);
                     Text.Font = GameFont.Tiny;
                     Text.Anchor = TextAnchor.MiddleCenter;
                     Widgets.Label(nameRect, shortName);
