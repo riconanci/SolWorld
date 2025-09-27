@@ -101,7 +101,7 @@ namespace SolWorldMod
             
             // Bottom right positioning
             var txWindowX = UI.screenWidth - txWindowWidth - 20f; // 20px from right edge
-            var txWindowY = UI.screenHeight - txWindowHeight - 23f; // 20px from bottom edge (orignally)
+            var txWindowY = UI.screenHeight - txWindowHeight - 22f; // 20px from bottom edge (orignally)
             var txRect = new Rect(txWindowX, txWindowY, txWindowWidth, txWindowHeight);
             
             // Background
@@ -110,7 +110,7 @@ namespace SolWorldMod
             GUI.DrawTexture(txRect, BaseContent.WhiteTex);
             
             // Border
-            GUI.color = Color.yellow;
+            GUI.color = Color.green;
             Widgets.DrawBox(txRect, 3);
             GUI.color = oldColor;
             
@@ -118,7 +118,7 @@ namespace SolWorldMod
             float y = innerRect.y;
             
             // Header - simplified
-            GUI.color = Color.yellow;
+            GUI.color = Color.green;
             Text.Font = GameFont.Medium;
             Text.Anchor = TextAnchor.MiddleCenter;
             
@@ -138,6 +138,20 @@ namespace SolWorldMod
             // Transaction list with better labels
             Text.Font = GameFont.Tiny;
             Text.Anchor = TextAnchor.UpperLeft;
+            
+            // Define transaction types based on common crypto arena patterns
+            string[] transactionLabels = {
+                "Claim Fees:",    // Usually the first transaction - claiming from pump.fun
+                "Payout Batch 1:", // First batch of winner payments
+                "Payout Batch 2:", // Second batch of winner payments  
+                "Payout Batch 3:", // Third batch if needed
+                "Treasury Split:", // Treasury operations
+                "Gas Refund:",    // Gas cost refunds
+                "Bonus Payment:", // Any bonus payments
+                "Dev Fee:",       // Development fees
+                "Liquidity:",     // Liquidity operations
+                "Bridge:"         // Cross-chain operations
+            };
             
             for (int i = 0; i < lastTransactionIds.Count; i++)
             {
@@ -304,6 +318,144 @@ namespace SolWorldMod
             var poolRect = new Rect(innerRect.x, y, innerRect.width, 25f);
             Widgets.Label(poolRect, poolText);
             y += 30f;
+            
+            Text.Anchor = TextAnchor.UpperLeft;
+        }
+
+        // PRESERVED: Draw winner header using persistent storage
+        // REPLACE your DrawWinnerHeaderPersistent method ending with this complete version:
+
+        private static void DrawWinnerHeaderPersistent(MapComponent_SolWorldArena arenaComp, Rect innerRect, ref float y, Color winnerColor)
+        {
+            // DEBUG TEST - Will help us see if this method is being called
+            GUI.color = Color.red;
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            var debugRect = new Rect(innerRect.x, y, innerRect.width, 20f);
+            Widgets.Label(debugRect, "DEBUG: DrawWinnerHeaderPersistent called!");
+            y += 25f;
+            
+            // Debug transaction count
+            var txCountText = $"DEBUG: Transaction count = {(lastTransactionIds?.Count ?? 0)}";
+            var txCountRect = new Rect(innerRect.x, y, innerRect.width, 20f);
+            GUI.color = Color.yellow;
+            Widgets.Label(txCountRect, txCountText);
+            y += 25f;
+            
+            // PRESERVED: Main celebration title
+            GUI.color = Color.yellow;
+            Text.Font = GameFont.Medium;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            
+            var titleText = $"🏆 {arenaComp.LastRoundWinner.ToString().ToUpper()} TEAM WINS! 🏆";
+            var titleRect = new Rect(innerRect.x, y, innerRect.width, 40f);
+            
+            // PRESERVED: Flashing effect for celebration
+            var flash = Mathf.Sin(Time.realtimeSinceStartup * 6f) > 0f;
+            GUI.color = flash ? Color.yellow : winnerColor;
+            
+            Widgets.Label(titleRect, titleText);
+            y += 45f;
+            
+            // PRESERVED: Prize information
+            Text.Font = GameFont.Medium;
+            GUI.color = Color.white;
+            
+            var prizeText = $"Each Winner Receives: {arenaComp.LastPerWinnerPayout:F3} SOL";
+            var prizeRect = new Rect(innerRect.x, y, innerRect.width, 30f);
+            Widgets.Label(prizeRect, prizeText);
+            y += 35f;
+            
+            // PRESERVED: Pool information (calculate from winner payout)
+            Text.Font = GameFont.Small;
+            GUI.color = Color.cyan;
+            
+            var totalPool = arenaComp.LastPerWinnerPayout * 10f / 0.20f; // Reverse calculate pool
+            var poolText = $"Total Prize Pool: {totalPool:F2} SOL | Match: {arenaComp.LastMatchId}";
+            var poolRect = new Rect(innerRect.x, y, innerRect.width, 25f);
+            Widgets.Label(poolRect, poolText);
+            y += 30f;
+            
+            // FORCE TRANSACTION DISPLAY - Always show something for testing
+            GUI.color = Color.green;
+            Text.Font = GameFont.Small;
+            Text.Anchor = TextAnchor.MiddleCenter;
+            
+            var forcedTxHeaderText = "💰 FORCED TRANSACTION TEST:";
+            var forcedTxHeaderRect = new Rect(innerRect.x, y, innerRect.width, 25f);
+            Widgets.Label(forcedTxHeaderRect, forcedTxHeaderText);
+            y += 30f;
+            
+            // Always show these test transactions
+            GUI.color = Color.cyan;
+            Text.Font = GameFont.Tiny;
+            
+            var testTx1Rect = new Rect(innerRect.x, y, innerRect.width, 20f);
+            Widgets.Label(testTx1Rect, "FORCED TX1: 5Kj7X2mP...8qL7w");
+            y += 22f;
+            
+            var testTx2Rect = new Rect(innerRect.x, y, innerRect.width, 20f);
+            Widgets.Label(testTx2Rect, "FORCED TX2: 9mP4L6vQ...3nH2s");
+            y += 22f;
+            
+            var testTx3Rect = new Rect(innerRect.x, y, innerRect.width, 20f);
+            Widgets.Label(testTx3Rect, "FORCED TX3: 7rT8N5kM...9pB4c");
+            y += 22f;
+            
+            // REAL Transaction IDs Section - Show actual data if available
+            if (lastTransactionIds != null && lastTransactionIds.Count > 0)
+            {
+                GUI.color = Color.white;
+                Text.Font = GameFont.Small;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                
+                var realTxHeaderText = $"💰 REAL TRANSACTIONS ({lastTransactionIds.Count}):";
+                var realTxHeaderRect = new Rect(innerRect.x, y, innerRect.width, 25f);
+                Widgets.Label(realTxHeaderRect, realTxHeaderText);
+                y += 30f;
+                
+                // Display each real transaction ID
+                Text.Font = GameFont.Tiny;
+                GUI.color = Color.white;
+                
+                for (int i = 0; i < lastTransactionIds.Count; i++)
+                {
+                    var txid = lastTransactionIds[i];
+                    var shortTxid = ShortenTransactionId(txid);
+                    var txText = $"REAL TX{i + 1}: {shortTxid}";
+                    
+                    var txRect = new Rect(innerRect.x, y, innerRect.width, 20f);
+                    
+                    // Alternate background colors for readability
+                    if (i % 2 == 0)
+                    {
+                        GUI.color = new Color(0.2f, 0.2f, 0.2f, 0.3f);
+                        GUI.DrawTexture(txRect, BaseContent.WhiteTex);
+                    }
+                    
+                    GUI.color = Color.cyan;
+                    Widgets.Label(txRect, txText);
+                    y += 22f;
+                }
+                
+                // Add copy instructions
+                Text.Font = GameFont.Tiny;
+                GUI.color = Color.gray;
+                var instructionText = "Winners can verify payments on Solscan.io";
+                var instructionRect = new Rect(innerRect.x, y, innerRect.width, 18f);
+                Widgets.Label(instructionRect, instructionText);
+                y += 20f;
+            }
+            else
+            {
+                // Show debug info if no real transactions
+                GUI.color = Color.red;
+                Text.Font = GameFont.Tiny;
+                var noTxText = "DEBUG: No real transaction IDs found";
+                var noTxRect = new Rect(innerRect.x, y, innerRect.width, 18f);
+                Widgets.Label(noTxRect, noTxText);
+                y += 20f;
+            }
             
             Text.Anchor = TextAnchor.UpperLeft;
         }
