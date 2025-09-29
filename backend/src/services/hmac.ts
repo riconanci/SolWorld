@@ -36,13 +36,39 @@ export class HmacService {
 
   /**
    * Generate canonical JSON string for HMAC signing
+   * MUST match C# mod's SimpleJson.Serialize() exactly
    */
   canonicalJson(obj: any): string {
-    // Remove signature and hmac fields from the object for signing
+    // Remove signature and hmac fields
     const { signature, hmacKeyId, ...cleanObj } = obj;
     
-    // Sort keys recursively and stringify
-    return JSON.stringify(cleanObj, Object.keys(cleanObj).sort());
+    // Recursively sort all nested object keys
+    const sortedObj = this.deepSortKeys(cleanObj);
+    
+    const canonical = JSON.stringify(sortedObj);
+    
+    console.log('🔐 Backend canonical string (first 500 chars):');
+    console.log(canonical.substring(0, 500));
+    console.log('🔐 Full canonical length:', canonical.length);
+    
+    return canonical;
+  }
+
+  private deepSortKeys(obj: any): any {
+    if (Array.isArray(obj)) {
+      return obj.map(item => this.deepSortKeys(item));
+    }
+    
+    if (obj !== null && typeof obj === 'object') {
+      return Object.keys(obj)
+        .sort()
+        .reduce((result: any, key: string) => {
+          result[key] = this.deepSortKeys(obj[key]);
+          return result;
+        }, {});
+    }
+    
+    return obj;
   }
 
   /**
@@ -59,6 +85,8 @@ export class HmacService {
       .createHmac('sha256', secret)
       .update(canonical, 'utf8')
       .digest('hex');
+
+    console.log('✍️ Generated signature:', signature);
 
     return { signature, keyId };
   }
@@ -84,6 +112,11 @@ export class HmacService {
         .update(canonical, 'utf8')
         .digest('hex');
 
+      console.log('🔍 HMAC Verification:');
+      console.log('   Expected signature:', expectedSignature);
+      console.log('   Provided signature:', providedSignature);
+      console.log('   Match:', expectedSignature === providedSignature);
+
       // Timing-safe comparison
       const valid = crypto.timingSafeEqual(
         Buffer.from(expectedSignature, 'hex'),
@@ -91,12 +124,24 @@ export class HmacService {
       );
 
       if (!valid) {
-        console.warn('HMAC signature verification failed:', {
+        console.warn('❌ HMAC signature verification failed:', {
           keyId,
           expectedLength: expectedSignature.length,
           providedLength: providedSignature.length,
-          canonical: canonical.substring(0, 100) + '...'
+          expectedFirst16: expectedSignature.substring(0, 16),
+          providedFirst16: providedSignature.substring(0, 16)
         });
+        
+        // Character-by-character comparison for debugging
+        console.log('🔎 Character comparison:');
+        for (let i = 0; i < Math.max(expectedSignature.length, providedSignature.length); i++) {
+          if (expectedSignature[i] !== providedSignature[i]) {
+            console.log(`   Position ${i}: expected '${expectedSignature[i]}' got '${providedSignature[i]}'`);
+            break; // Only show first difference
+          }
+        }
+      } else {
+        console.log('✅ HMAC signature verified successfully');
       }
 
       return {
@@ -106,6 +151,7 @@ export class HmacService {
       };
 
     } catch (error) {
+      console.error('❌ HMAC verification error:', error);
       return {
         valid: false,
         error: error instanceof Error ? error.message : 'Verification failed'

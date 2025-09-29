@@ -63,22 +63,28 @@ namespace SolWorldMod.Net
             try
             {
                 Log.Message("SolWorld: HTTP POST " + url);
-                Log.Message("SolWorld: POST Data: " + jsonData.Substring(0, Math.Min(200, jsonData.Length)) + "...");
+                
+                // Log the ACTUAL data being sent
+                Log.Message("SolWorld: Full POST body:");
+                Log.Message(jsonData);
                 
                 var request = (HttpWebRequest)WebRequest.Create(url);
                 request.Method = "POST";
                 request.Timeout = TimeoutMs;
-                request.ContentType = "application/json";
+                request.ContentType = "application/json; charset=utf-8";
                 request.UserAgent = "SolWorld-RimWorld-Mod/1.0";
                 request.Accept = "application/json";
 
-                // Write JSON data
+                // Write JSON data with explicit UTF-8 encoding
                 var data = Encoding.UTF8.GetBytes(jsonData);
                 request.ContentLength = data.Length;
+
+                Log.Message($"SolWorld: Sending {data.Length} bytes");
 
                 using (var stream = request.GetRequestStream())
                 {
                     stream.Write(data, 0, data.Length);
+                    stream.Flush();
                 }
 
                 using (var response = (HttpWebResponse)request.GetResponse())
@@ -105,11 +111,18 @@ namespace SolWorldMod.Net
                 Log.Error("SolWorld: HTTP POST WebException: " + ex.Message);
                 if (ex.Response is HttpWebResponse errorResponse)
                 {
-                    using (var stream = errorResponse.GetResponseStream())
-                    using (var reader = new StreamReader(stream))
+                    try
                     {
-                        var errorBody = reader.ReadToEnd();
-                        Log.Error("SolWorld: HTTP Error Body: " + errorBody);
+                        using (var stream = errorResponse.GetResponseStream())
+                        using (var reader = new StreamReader(stream))
+                        {
+                            var errorBody = reader.ReadToEnd();
+                            Log.Error("SolWorld: HTTP Error Body: " + errorBody);
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore secondary errors
                     }
                 }
                 return null;

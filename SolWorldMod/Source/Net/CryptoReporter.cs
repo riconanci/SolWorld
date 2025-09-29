@@ -222,47 +222,63 @@ namespace SolWorldMod.Net
             var timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var nonce = GenerateNonce();
             
-            // Create base payload
-            var payload = new
+            // ✅ Create fighter arrays FIRST as proper objects
+            var redFighters = new object[roster.Red.Count];
+            for (int i = 0; i < roster.Red.Count; i++)
             {
+                var f = roster.Red[i];
+                redFighters[i] = new { 
+                    wallet = f.WalletFull, 
+                    kills = f.Kills, 
+                    alive = f.Alive 
+                };
+            }
+            
+            var blueFighters = new object[roster.Blue.Count];
+            for (int i = 0; i < roster.Blue.Count; i++)
+            {
+                var f = roster.Blue[i];
+                blueFighters[i] = new { 
+                    wallet = f.WalletFull, 
+                    kills = f.Kills, 
+                    alive = f.Alive 
+                };
+            }
+            
+            // Create base payload using pre-built arrays
+            var basePayload = new
+            {
+                blue = blueFighters,              // alphabetically first
                 matchId = roster.MatchId,
-                timestamp = timestamp,
                 nonce = nonce,
-                winner = roster.Winner?.ToString() ?? "Tie",
-                red = roster.Red.ConvertAll(f => new { 
-                    wallet = f.WalletFull, 
-                    kills = f.Kills, 
-                    alive = f.Alive 
-                }).ToArray(),
-                blue = roster.Blue.ConvertAll(f => new { 
-                    wallet = f.WalletFull, 
-                    kills = f.Kills, 
-                    alive = f.Alive 
-                }).ToArray(),
+                payoutPercent = roster.PayoutPercent,
+                red = redFighters,
                 roundRewardTotalSol = roster.RoundRewardTotalSol,
-                payoutPercent = roster.PayoutPercent
+                timestamp = timestamp,
+                winner = roster.Winner?.ToString() ?? "Tie"
             };
 
-            // Add HMAC if configured
+            // If HMAC is configured, sign and return with signature fields
             if (!string.IsNullOrEmpty(SolWorldMod.Settings.hmacKeyId))
             {
-                var signature = hmacService.Sign(payload, SolWorldMod.Settings.hmacKeyId);
+                var signature = hmacService.Sign(basePayload, SolWorldMod.Settings.hmacKeyId);
+                
                 return new
                 {
-                    matchId = payload.matchId,
-                    timestamp = payload.timestamp,
-                    nonce = payload.nonce,
-                    winner = payload.winner,
-                    red = payload.red,
-                    blue = payload.blue,
-                    roundRewardTotalSol = payload.roundRewardTotalSol,
-                    payoutPercent = payload.payoutPercent,
+                    blue = blueFighters,  // ✅ Use same pre-built array
                     hmacKeyId = SolWorldMod.Settings.hmacKeyId,
-                    signature = signature
+                    matchId = basePayload.matchId,
+                    nonce = basePayload.nonce,
+                    payoutPercent = basePayload.payoutPercent,
+                    red = redFighters,    // ✅ Use same pre-built array
+                    roundRewardTotalSol = basePayload.roundRewardTotalSol,
+                    signature = signature,
+                    timestamp = basePayload.timestamp,
+                    winner = basePayload.winner
                 };
             }
 
-            return payload;
+            return basePayload;
         }
 
         private string SerializeReportPayload(object payload)
@@ -846,23 +862,133 @@ namespace SolWorldMod.Net
     }
 
     // Simple JSON helper class - basic implementation (PRESERVED)
+    // Replace the SimpleJson class at the BOTTOM of CryptoReporter.cs
+    // This version properly serializes nested anonymous objects
+
     public static class SimpleJson
     {
         public static string Serialize(object obj)
         {
-            // Very basic JSON serialization for our specific needs
-            // In a real implementation, you'd use Newtonsoft.Json or similar
             if (obj == null) return "null";
-            
-            // This is a simplified version - you may need to expand this
-            return obj.ToString(); // Placeholder - implement proper JSON serialization
+            return SerializeValue(obj);
         }
-
+        
+        private static string SerializeValue(object value)
+        {
+            if (value == null) return "null";
+            
+            var type = value.GetType();
+            
+            // String values need quotes and escaping
+            if (type == typeof(string))
+            {
+                return "\"" + EscapeString(value.ToString()) + "\"";
+            }
+            
+            // Boolean values must be lowercase
+            if (type == typeof(bool))
+            {
+                return value.ToString().ToLower();
+            }
+            
+            // Numbers don't need quotes
+            if (IsNumericType(type))
+            {
+                var str = value.ToString();
+                // Handle float formatting - ensure decimal point, not comma
+                if (type == typeof(float) || type == typeof(double))
+                {
+                    str = str.Replace(",", ".");
+                }
+                return str;
+            }
+            
+            // Arrays
+            if (type.IsArray)
+            {
+                var array = value as Array;
+                var sb = new System.Text.StringBuilder();
+                sb.Append("[");
+                
+                for (int i = 0; i < array.Length; i++)
+                {
+                    if (i > 0) sb.Append(",");
+                    sb.Append(SerializeValue(array.GetValue(i)));
+                }
+                
+                sb.Append("]");
+                return sb.ToString();
+            }
+            
+            // Objects (including anonymous types) - check by seeing if it has properties
+            var properties = type.GetProperties();
+            if (properties.Length > 0)
+            {
+                var sb = new System.Text.StringBuilder();
+                sb.Append("{");
+                
+                // CRITICAL: Sort properties alphabetically to match backend canonicalization
+                var sortedProps = properties
+                    .Where(p => p.GetIndexParameters().Length == 0) // Skip indexer properties
+                    .OrderBy(p => p.Name)
+                    .ToArray();
+                
+                var first = true;
+                foreach (var prop in sortedProps)
+                {
+                    if (!first) sb.Append(",");
+                    first = false;
+                    
+                    var propValue = prop.GetValue(value);
+                    
+                    // Add property name with quotes and colon
+                    sb.Append("\"");
+                    sb.Append(prop.Name);
+                    sb.Append("\":");
+                    
+                    // Recursively serialize the property value
+                    sb.Append(SerializeValue(propValue));
+                }
+                
+                sb.Append("}");
+                return sb.ToString();
+            }
+            
+            // Default fallback - quote it as a string
+            return "\"" + EscapeString(value.ToString()) + "\"";
+        }
+        
+        private static string EscapeString(string str)
+        {
+            if (string.IsNullOrEmpty(str)) return "";
+            
+            return str
+                .Replace("\\", "\\\\")  // Backslash must be first
+                .Replace("\"", "\\\"")  // Escape quotes
+                .Replace("\n", "\\n")   // Newlines
+                .Replace("\r", "\\r")   // Carriage returns
+                .Replace("\t", "\\t");  // Tabs
+        }
+        
+        private static bool IsNumericType(Type type)
+        {
+            return type == typeof(int) || 
+                type == typeof(long) || 
+                type == typeof(float) || 
+                type == typeof(double) || 
+                type == typeof(decimal) ||
+                type == typeof(short) ||
+                type == typeof(byte) ||
+                type == typeof(uint) ||
+                type == typeof(ulong) ||
+                type == typeof(ushort);
+        }
+        
         public static T Deserialize<T>(string json) where T : new()
         {
-            // Very basic JSON deserialization
-            // In a real implementation, you'd use Newtonsoft.Json or similar
-            return new T(); // Placeholder - implement proper JSON deserialization
+            // Basic deserialization - just return a new instance
+            // The real parsing is done by the ExtractJsonValue methods in CryptoReporter
+            return new T();
         }
     }
 }

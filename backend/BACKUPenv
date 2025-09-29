@@ -1,0 +1,19 @@
+PORT=4001
+NODE_ENV=dev
+RPC_ENDPOINT=https://api.mainnet-beta.solana.com
+
+#Pumpfun wallet key that made the token
+CREATOR_WALLET_PRIVATE_KEY=3oEt9Fcdq57fmVYLdWRrrUqTgtvLAi3cJR7bpLzn6wsQ2PpZxWVsqKG817kKx4Y3dqVAHzbnWMtFHmoSyjASzSYk
+#Wallet key for the treasury that will pay out to holders
+TREASURY_WALLET_PRIVATE_KEY=5gxW9X1NU7XzyLy4sVb6EZEv85hUVRJjmaSa9zXRzqkQ5AW4cmiwMWPCvmtgfnr15W2VCMF4VUHLFdVBnZRG9Mii
+#Wallet address that collects rewards (80%)
+DEV_WALLET_ADDRESS=CediUaTLvgBpw7Z875LJir4P24WjCVf2auxoSg29zCT9
+
+TEST_TOKEN_MINT=31JG1RZmcZCRSe3pmX5P18jmCLGBBUyWbV2NuZK7pump
+
+PAYOUT_SPLIT_PERCENT=0.20
+GAS_RESERVE_SOL=0.015
+MIN_HOLDER_BALANCE=50000
+
+HMAC_KEYS={"default":"supersecret"}
+PUMPPORTAL_BASE_URL=https://pumpportal.fun/api/v1

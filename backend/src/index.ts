@@ -18,6 +18,19 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// DEBUG: Body parsing verification
+app.use((req, res, next) => {
+  if (req.path.includes('/arena/report')) {
+    console.log('📦 Raw request body type:', typeof req.body);
+    console.log('📦 Body keys:', Object.keys(req.body));
+    console.log('📦 Blue array length:', req.body.blue?.length);
+    console.log('📦 First blue fighter:', JSON.stringify(req.body.blue?.[0]));
+    console.log('📦 Red array length:', req.body.red?.length);
+    console.log('📦 First red fighter:', JSON.stringify(req.body.red?.[0]));
+  }
+  next();
+});
+
 // Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
