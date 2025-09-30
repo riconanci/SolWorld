@@ -16,8 +16,8 @@ export const config = {
   MIN_HOLDER_BALANCE: parseFloat(process.env.MIN_HOLDER_BALANCE || '50000'),
   
   // Wallet Configuration  
-  CREATOR_WALLET_PRIVATE_KEY: process.env.CREATOR_WALLET_PRIVATE_KEY || '3oEt9Fcdq57fmVYLdWRrrUqTgtvLAi3cJR7bpLzn6wsQ2PpZxWVsqKG817kKx4Y3dqVAHzbnWMtFHmoSyjASzSYk',
-  TREASURY_WALLET_PRIVATE_KEY: process.env.TREASURY_WALLET_PRIVATE_KEY || '57HEhEaD6pW45YrDvaT5iGBLkQCsNi2ax9F9omE8ZjXcQmra8p5A5xSUNahNLXZj7uRejNY1JQrNw3ZvBU3YJ4Wi',
+  CREATOR_WALLET_PRIVATE_KEY: process.env.CREATOR_WALLET_PRIVATE_KEY || '',
+  TREASURY_WALLET_PRIVATE_KEY: process.env.TREASURY_WALLET_PRIVATE_KEY || '',
   DEV_WALLET_ADDRESS: process.env.DEV_WALLET_ADDRESS || 'CediUaTLvgBpw7Z875LJir4P24WjCVf2auxoSg29zCT9',
   
   // Payout Configuration
@@ -26,7 +26,7 @@ export const config = {
   roundPoolSol: parseFloat(process.env.roundPoolSol || '1.0'),
   
   // Security Configuration
-  HMAC_KEYS: JSON.parse(process.env.HMAC_KEYS || '{"default":"a7f8d9e2b4c6a1f3e8d7b9c2a5f6e3d8b1c4a7f9e2d6b8c3a5f7e4d9b2c6a8f1e3d7"}') as Record<string, string>,
+  HMAC_KEYS: JSON.parse(process.env.HMAC_KEYS || '{"="}') as Record<string, string>,
   
   // PumpPortal API Configuration
   PUMPPORTAL_BASE_URL: process.env.PUMPPORTAL_BASE_URL || 'https://pumpportal.fun/api/v1',
