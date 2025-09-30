@@ -12,13 +12,13 @@ export const config = {
   
   // Solana Blockchain Configuration
   RPC_ENDPOINT: process.env.RPC_ENDPOINT || 'https://api.mainnet-beta.solana.com',
-  TEST_TOKEN_MINT: process.env.TEST_TOKEN_MINT || '31JG1RZmcZCRSe3pmX5P18jmCLGBBUyWbV2NuZK7pump',
+  TEST_TOKEN_MINT: process.env.TEST_TOKEN_MINT || '31mtqJVnyfN98d1Qie3ijsRLsLq11S5VPVtKKvzypump',
   MIN_HOLDER_BALANCE: parseFloat(process.env.MIN_HOLDER_BALANCE || '50000'),
   
   // Wallet Configuration  
-  CREATOR_WALLET_PRIVATE_KEY: process.env.CREATOR_WALLET_PRIVATE_KEY || '66BiAXXY1uNMgiiFVjQ9mAnGTKT2WrzjJy8YpqhnupmUWaXeHPAZG2zz3n3WHUa2FtsJpVj1xU7TA4bk7EAJEXEQ',
-  TREASURY_WALLET_PRIVATE_KEY: process.env.TREASURY_WALLET_PRIVATE_KEY || '5gxW9X1NU7XzyLy4sVb6EZEv85hUVRJjmaSa9zXRzqkQ5AW4cmiwMWPCvmtgfnr15W2VCMF4VUHLFdVBnZRG9Mii',
-  DEV_WALLET_ADDRESS: process.env.DEV_WALLET_ADDRESS || 'FQCdaGW2BEDuVoS4aCESsr4bPVQLrushug6iHcdwpoSY',
+  CREATOR_WALLET_PRIVATE_KEY: process.env.CREATOR_WALLET_PRIVATE_KEY || '3oEt9Fcdq57fmVYLdWRrrUqTgtvLAi3cJR7bpLzn6wsQ2PpZxWVsqKG817kKx4Y3dqVAHzbnWMtFHmoSyjASzSYk',
+  TREASURY_WALLET_PRIVATE_KEY: process.env.TREASURY_WALLET_PRIVATE_KEY || '57HEhEaD6pW45YrDvaT5iGBLkQCsNi2ax9F9omE8ZjXcQmra8p5A5xSUNahNLXZj7uRejNY1JQrNw3ZvBU3YJ4Wi',
+  DEV_WALLET_ADDRESS: process.env.DEV_WALLET_ADDRESS || 'CediUaTLvgBpw7Z875LJir4P24WjCVf2auxoSg29zCT9',
   
   // Payout Configuration
   PAYOUT_SPLIT_PERCENT: parseFloat(process.env.PAYOUT_SPLIT_PERCENT || '0.20'),
@@ -26,7 +26,7 @@ export const config = {
   roundPoolSol: parseFloat(process.env.roundPoolSol || '1.0'),
   
   // Security Configuration
-  HMAC_KEYS: JSON.parse(process.env.HMAC_KEYS || '{"default":"supersecret"}') as Record<string, string>,
+  HMAC_KEYS: JSON.parse(process.env.HMAC_KEYS || '{"default":"a7f8d9e2b4c6a1f3e8d7b9c2a5f6e3d8b1c4a7f9e2d6b8c3a5f7e4d9b2c6a8f1e3d7"}') as Record<string, string>,
   
   // PumpPortal API Configuration
   PUMPPORTAL_BASE_URL: process.env.PUMPPORTAL_BASE_URL || 'https://pumpportal.fun/api/v1',
