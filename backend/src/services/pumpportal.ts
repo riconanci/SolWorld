@@ -205,6 +205,13 @@ export class PumpPortalService {
   }
 
   /**
+   * Get creator keypair for treasury split operations
+   */
+  getCreatorKeypair(): Keypair {
+    return this.creatorKeypair;
+  }
+
+  /**
    * Simulate claiming process (for development/testing)
    */
   private async simulateClaimProcess(): Promise<ClaimResult> {

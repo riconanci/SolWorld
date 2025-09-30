@@ -29,6 +29,7 @@ export interface PayoutResult {
 
 export class TreasuryService {
   private connection: Connection;
+  private creatorKeypair: Keypair;
   private treasuryKeypair: Keypair;
   private devWallet: PublicKey;
   private transactionHistory: Array<{
@@ -39,9 +40,10 @@ export class TreasuryService {
     recipients?: number;
   }>;
 
-  constructor() {
+  constructor(creatorKeypair: Keypair) {
     this.connection = new Connection(config.RPC_ENDPOINT, 'confirmed');
     this.transactionHistory = [];
+    this.creatorKeypair = creatorKeypair;
     
     try {
       // Initialize treasury keypair
@@ -52,10 +54,11 @@ export class TreasuryService {
       this.devWallet = new PublicKey(config.DEV_WALLET_ADDRESS);
       
       console.log('🏦 Treasury service initialized:');
+      console.log('  Creator:', this.creatorKeypair.publicKey.toBase58());
       console.log('  Treasury:', this.treasuryKeypair.publicKey.toBase58());
       console.log('  Dev wallet:', this.devWallet.toBase58());
-      console.log('  Mode: Dynamic Pool Sizing');
-      console.log('  No funding required! ✅');
+      console.log('  Mode: Dynamic Pool Sizing - Split FROM Creator ✅');
+      console.log('  No treasury funding required! ✅');
       
     } catch (error) {
       console.error('Failed to initialize treasury service:', error);
@@ -107,31 +110,55 @@ export class TreasuryService {
         };
       }
 
-      // Production mode: Execute actual transfers
-      console.log('🚀 Production mode: Executing real split transfer...');
+      // Production mode: Execute actual transfers FROM CREATOR
+      console.log('🚀 Production mode: Executing real split transfer FROM creator...');
       
       try {
-        // Transfer dev portion to dev wallet
-        const signature = await this.transferSol(this.devWallet.toBase58(), devAmount);
+        // Check creator wallet has enough for split + gas reserve
+        const creatorBalance = await this.connection.getBalance(this.creatorKeypair.publicKey);
+        const creatorBalanceSol = creatorBalance / LAMPORTS_PER_SOL;
+        const requiredTotal = claimedSol + config.GAS_RESERVE_SOL;
         
-        // The treasury portion stays in the treasury (no transfer needed)
+        console.log(`  💼 Creator balance: ${creatorBalanceSol.toFixed(6)} SOL`);
+        console.log(`  📊 Required: ${requiredTotal.toFixed(6)} SOL (${claimedSol.toFixed(6)} split + ${config.GAS_RESERVE_SOL} gas reserve)`);
+        
+        if (creatorBalanceSol < requiredTotal) {
+          const shortage = requiredTotal - creatorBalanceSol;
+          console.error(`❌ Creator wallet needs ${shortage.toFixed(6)} more SOL for safe operation`);
+          return {
+            success: false,
+            error: `Creator wallet insufficient: ${creatorBalanceSol.toFixed(6)} SOL available, ${requiredTotal.toFixed(6)} SOL required (including ${config.GAS_RESERVE_SOL} SOL gas reserve)`
+          };
+        }
+        
+        // Transfer dev portion FROM creator TO dev wallet
+        const devSignature = await this.transferFromCreator(this.devWallet.toBase58(), devAmount);
+        console.log(`  ✅ Dev transfer: ${devSignature}`);
+        
+        // Transfer treasury portion FROM creator TO treasury  
+        const treasurySignature = await this.transferFromCreator(this.treasuryKeypair.publicKey.toBase58(), treasuryAmount);
+        console.log(`  ✅ Treasury transfer: ${treasurySignature}`);
+        
         const newBalance = await this.getTreasuryBalance();
+        const finalCreatorBalance = await this.connection.getBalance(this.creatorKeypair.publicKey) / LAMPORTS_PER_SOL;
         
         // Record real transaction
         this.transactionHistory.push({
           type: 'split',
           timestamp: Date.now(),
           amount: devAmount,
-          signature: signature
+          signature: devSignature
         });
 
         console.log(`✅ Split transfer complete`);
-        console.log(`  🎯 Transaction: ${signature}`);
+        console.log(`  🎯 Dev transaction: ${devSignature}`);
+        console.log(`  🎯 Treasury transaction: ${treasurySignature}`);
         console.log(`  💰 Treasury balance: ${newBalance.toFixed(6)} SOL`);
+        console.log(`  💼 Creator balance remaining: ${finalCreatorBalance.toFixed(6)} SOL`);
         
         return {
           success: true,
-          devTransferSignature: signature,
+          devTransferSignature: devSignature,
           treasuryBalance: newBalance
         };
       } catch (error) {
@@ -421,6 +448,31 @@ export class TreasuryService {
         error: error instanceof Error ? error.message : 'Unknown payout error'
       };
     }
+  }
+
+  /**
+   * Transfer SOL from treasury to a wallet
+   */
+  private async transferFromCreator(recipientAddress: string, amountSol: number): Promise<string> {
+    const recipient = new PublicKey(recipientAddress);
+    const lamports = Math.floor(amountSol * LAMPORTS_PER_SOL);
+
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: this.creatorKeypair.publicKey,
+        toPubkey: recipient,
+        lamports
+      })
+    );
+
+    const signature = await sendAndConfirmTransaction(
+      this.connection,
+      transaction,
+      [this.creatorKeypair],
+      { commitment: 'confirmed' }
+    );
+
+    return signature;
   }
 
   /**

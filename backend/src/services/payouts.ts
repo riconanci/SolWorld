@@ -69,7 +69,7 @@ export class PayoutService {
 
   constructor() {
     this.pumpPortal = new PumpPortalService();
-    this.treasury = new TreasuryService();
+    this.treasury = new TreasuryService(this.pumpPortal.getCreatorKeypair());
     this.processedMatches = new Set();
     this.roundHistory = [];
     
